@@ -27,8 +27,8 @@ python -m netsched run --dry-run       # full loop, but never connects
 python -m netsched run                 # live
 python -m netsched report              # certificates that need manual download
 
-# register the word of an occasional net (a single day, or a range)
-python -m netsched addword LU8HEG-5 MESSI --from 2026-11-01 --to 2026-11-03
+# register the word of an occasional net (a day or a range, optionally at an exact time)
+python -m netsched addword LU8HEG-5 MESSI --from 2026-11-01 --to 2026-11-03 --at 14:30
 ```
 
 Run the tests with `python -m unittest discover -s tests -t .`.
@@ -78,6 +78,38 @@ website; `email` just records the reply; `none` ignores it.
 
 Always quote times (`"13:00"`): YAML reads an unquoted `13:00` as a number.
 
+## Days, times and congestion
+
+**Which day is it?** Most nets run on UTC, so a net's day is the calendar date in
+`net_timezone` (default `UTC`). A net that follows its own local time sets
+`tz: Region/City` in `nets.yaml`. Your own `timezone` is only used to *display*
+times and to read `today --at`.
+
+**When is the message sent?** Not at the first second of the day. For every net
+and day the scheduler picks a stable pseudo-random moment inside a window
+(the same after a restart, different between nets), so a hundred stations do not
+hit the same net at 00:00:
+
+| In `schedule:` | Effect |
+| --- | --- |
+| *(nothing)* | window opens at 00:00 and the send is spread over `send.default_spread_minutes` (60) |
+| `after: "13:00"` | window opens at 13:00 (net time), then the same spread |
+| `at: "14:30"` | exactly 14:30, no spread |
+| `before: "18:00"` | the send is never later than this; after it the net shows as `closed` |
+| `spread: 15` | this net only: spread over 15 minutes (0 = on the dot) |
+
+**Events:** an event is a word plus the days it applies to, and optionally the
+exact time. Registering it also fixes the run time for those days:
+
+```bash
+python -m netsched addword LU8HEG-5 MESSI --from 2026-11-01 --to 2026-11-03 --at 14:30
+```
+
+In `nets.yaml` the same thing is `words: {2026-11-01: {word: MESSI, at: "14:30"}}`,
+and in `words.csv` it is the optional `time` column. The time is in the net's
+timezone. `python -m netsched today` shows, for every net, when it will be sent
+(UTC and your own time).
+
 ## Running as a service
 
 `deploy/netsched.service` is a systemd unit. The APRS-IS passcode is computed
@@ -95,5 +127,3 @@ images and PDFs. Replies from stations that are not registered nets are ignored.
 - Nets that require a code typed into a website (`certificate: code`, e.g.
   TICANET) are only reported, not automated.
 - No notification channel yet (Telegram/e-mail) for items listed by `report`.
-- Each net's "day" follows the `timezone` in config.yaml (or a per-net `tz:`),
-  which may differ from the net's own time zone.

@@ -4,9 +4,11 @@ import unittest
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from netsched.schedule import ConfigError, Net, Schedule, evaluate, load_nets, merge_words_csv
+from netsched.schedule import ConfigError, Net, Schedule, evaluate, load_nets, merge_words_csv, send_time
 
 SP = ZoneInfo("America/Sao_Paulo")
+UTC_ZONE = ZoneInfo("UTC")
+UTC = dt.timezone.utc
 SIG = "Greetings from Daniel K. / Mafra, SC - Brazil"
 
 
@@ -107,6 +109,61 @@ class Evaluation(unittest.TestCase):
         self.assertEqual(evaluate(net(message="CQ {week}"), at(2026, 10, 8)).text, "CQ 41")
 
 
+class SendTimes(unittest.TestCase):
+    DAY = dt.date(2026, 10, 11)
+
+    def test_at_means_an_exact_time_without_spread(self):
+        s = Schedule.from_dict({"at": "14:30"})
+        self.assertEqual((s.after, s.spread), (dt.time(14, 30), 0))
+        with self.assertRaises(ConfigError):
+            Schedule.from_dict({"at": "14:30", "after": "10:00"})
+
+    def test_window_validation(self):
+        with self.assertRaises(ConfigError):
+            Schedule.from_dict({"after": "12:00", "before": "11:00"})
+        with self.assertRaises(ConfigError):
+            Schedule.from_dict({"spread": -5})
+
+    def test_spread_is_stable_and_inside_the_window(self):
+        n = net(callsign="APRSMY")
+        first = send_time(n, self.DAY, UTC_ZONE, 60)
+        self.assertEqual(first, send_time(n, self.DAY, UTC_ZONE, 60))
+        opens = dt.datetime(2026, 10, 11, tzinfo=UTC)
+        self.assertTrue(opens <= first <= opens + dt.timedelta(minutes=60))
+        moments = {send_time(net(callsign=c), self.DAY, UTC_ZONE, 60) for c in ("A1", "B2", "C3", "D4", "E5", "F6")}
+        self.assertGreater(len(moments), 1)  # the nets are not all contacted at the same second
+
+    def test_due_exactly_at_the_send_time(self):
+        n = net(schedule={"type": "daily", "after": "10:00", "spread": 30})
+        when = send_time(n, self.DAY, UTC_ZONE, 0)
+        self.assertEqual(evaluate(n, when - dt.timedelta(seconds=1), default_tz="UTC").state, "waiting")
+        self.assertEqual(evaluate(n, when, default_tz="UTC").state, "due")
+
+    def test_before_caps_the_spread_and_closes_the_window(self):
+        n = net(schedule={"type": "daily", "after": "10:00", "before": "10:05", "spread": 600})
+        self.assertLessEqual(send_time(n, self.DAY, UTC_ZONE, 0), dt.datetime(2026, 10, 11, 10, 5, tzinfo=UTC))
+        late = dt.datetime(2026, 10, 11, 10, 6, tzinfo=UTC)
+        self.assertEqual(evaluate(n, late, default_tz="UTC").state, "closed")
+
+    def test_event_time_is_exact_and_overrides_the_window(self):
+        n = net(mode="by_date", message="", schedule={"type": "daily", "spread": 600},
+                words={"2026-10-11": {"word": "TIKAL", "at": "14:30"}})
+        self.assertEqual(send_time(n, self.DAY, UTC_ZONE, 60), dt.datetime(2026, 10, 11, 14, 30, tzinfo=UTC))
+        self.assertEqual(evaluate(n, dt.datetime(2026, 10, 11, 14, 29, tzinfo=UTC), default_tz="UTC").state, "waiting")
+        self.assertEqual(evaluate(n, dt.datetime(2026, 10, 11, 14, 30, tzinfo=UTC), default_tz="UTC").state, "due")
+
+    def test_the_net_day_follows_its_own_timezone(self):
+        # Saturday 23:30 in Sao Paulo is already Sunday 02:30 UTC
+        now = dt.datetime(2026, 10, 10, 23, 30, tzinfo=SP)
+        rule = {"type": "weekly", "weekdays": ["sun"], "at": "00:00"}
+        self.assertEqual(evaluate(net(schedule=rule), now, default_tz="UTC").state, "due")
+        self.assertEqual(evaluate(net(schedule=rule, tz="America/Sao_Paulo"), now, default_tz="UTC").state, "inactive")
+
+    def test_unknown_timezone_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            net(tz="Mars/Olympus")
+
+
 class Loading(unittest.TestCase):
     def test_repository_nets_file_loads(self):
         nets = load_nets(Path(__file__).resolve().parent.parent / "nets.yaml")
@@ -115,6 +172,7 @@ class Loading(unittest.TestCase):
         self.assertEqual(by_call["9W4GTS"].schedule.weekdays, (4,))
         self.assertEqual(by_call["CX2JO-10"].schedule.after, dt.time(13, 0))
         self.assertEqual(by_call["CX2JO-10"].mode, "by_date")
+        self.assertEqual(by_call["CX2JO-10"].tz, "America/Montevideo")
         self.assertEqual(by_call["TICANET"].certificate, "code")
         self.assertEqual(by_call["PKTNET"].certificate, "email")
         self.assertEqual(by_call["ANSRVR"].certificate, "none")
@@ -127,6 +185,15 @@ class Loading(unittest.TestCase):
         self.assertEqual(decision.state, "due")
         self.assertEqual(decision.text, "CQ HOTG Greetings from Daniel K. / Mafra, SC - Brazil (APRSTh#41)")
         self.assertEqual(evaluate(ansrvr, at(2026, 10, 9), SIG, "America/Sao_Paulo").state, "inactive")
+
+    def test_words_csv_time_column(self):
+        nets = [net(callsign="X", mode="by_date", message="")]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "words.csv"
+            path.write_text("callsign,date,word,time\nX,2026-10-02,A,14:30\nX,2026-10-03,B,\n", encoding="utf-8")
+            merge_words_csv(nets, path)
+        self.assertEqual(nets[0].word_times, {dt.date(2026, 10, 2): dt.time(14, 30)})
+        self.assertEqual(nets[0].words[dt.date(2026, 10, 3)], "B")
 
     def test_words_csv_merge(self):
         nets = [net(callsign="CE4JWI-10", mode="by_date", message="")]

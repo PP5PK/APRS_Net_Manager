@@ -45,6 +45,7 @@ class Certificates(unittest.TestCase):
 class DatabaseFlow(unittest.TestCase):
     def setUp(self):
         self.db = Database(":memory:")
+        self.addCleanup(self.db.close)
         self.day = dt.date(2026, 10, 10)
 
     def test_send_is_unique_per_day_and_text(self):

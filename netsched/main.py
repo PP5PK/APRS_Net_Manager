@@ -5,6 +5,7 @@ import argparse
 import copy
 import csv
 import datetime as dt
+import io
 import logging
 import os
 import sys
@@ -17,13 +18,14 @@ import yaml
 from .aprsis import AprsIsClient, AuthError, DryRunClient, aprs_passcode, parse_message
 from .certificates import download, extract_urls, safe_name
 from .db import Database
-from .schedule import ConfigError, evaluate, load_nets
+from .schedule import ConfigError, check_timezone, evaluate, load_nets, parse_time
 from .util import same_station, utcnow
 
 log = logging.getLogger("netsched")
 
 DEFAULTS = {
-    "timezone": "America/Sao_Paulo",
+    "timezone": "America/Sao_Paulo",   # your own: used to display times and to read `today --at`
+    "net_timezone": "UTC",             # the default timezone that defines a net's day (a net can set `tz:`)
     "station": {"callsign": "", "passcode": "", "signature": ""},
     "aprs_is": {"host": "rotate.aprs2.net", "port": 14580},
     "paths": {
@@ -32,7 +34,13 @@ DEFAULTS = {
         "database": "data/netsched.db",
         "certificates": "certs",
     },
-    "send": {"tick_seconds": 30, "gap_seconds": 5, "retries": 3, "retry_interval": 60},
+    "send": {
+        "tick_seconds": 30,
+        "gap_seconds": 5,
+        "retries": 3,
+        "retry_interval": 60,
+        "default_spread_minutes": 60,  # spread send times after the window opens (0 = exactly on time)
+    },
 }
 
 
@@ -57,6 +65,10 @@ def load_config(path: str) -> dict:
     cfg = _merge(copy.deepcopy(DEFAULTS), user)  # never mutate the module-level defaults
     if not cfg["station"]["callsign"]:
         raise ConfigError("station.callsign is required in the config file")
+    for key in ("timezone", "net_timezone"):
+        check_timezone(str(cfg[key]), f"config '{key}'")
+    if int(cfg["send"]["default_spread_minutes"]) < 0:
+        raise ConfigError("send.default_spread_minutes cannot be negative")
     for key, value in cfg["paths"].items():
         cfg["paths"][key] = str((cfg_path.parent / value).resolve())
     return cfg
@@ -105,7 +117,8 @@ class Daemon:
         self.dry_run = dry_run
         self.callsign = cfg["station"]["callsign"].upper()
         self.signature = cfg["station"]["signature"]
-        self.tz = cfg["timezone"]
+        self.tz = cfg["net_timezone"]
+        self.spread = int(cfg["send"]["default_spread_minutes"])
         self.db = Database(":memory:" if dry_run else cfg["paths"]["database"])
         self.store = NetStore(cfg)
         self.cert_dir = Path(cfg["paths"]["certificates"])
@@ -145,7 +158,7 @@ class Daemon:
         now = utcnow()
         send_cfg = self.cfg["send"]
         for net in self.store.get():
-            decision = evaluate(net, now, self.signature, self.tz, self.db.is_done)
+            decision = evaluate(net, now, self.signature, self.tz, self.db.is_done, self.spread)
             if decision.state in ("missing_word", "too_long"):
                 key = (net.callsign, decision.day, decision.state)
                 if key not in self._warned:
@@ -273,18 +286,23 @@ def cmd_today(cfg: dict, args: argparse.Namespace) -> int:
     local = now.astimezone(ZoneInfo(cfg["timezone"]))
     db = Database(cfg["paths"]["database"])
     nets = NetStore(cfg).get()
-    order = {"due": 0, "waiting": 1, "missing_word": 2, "too_long": 3, "done": 4,
-             "no_event": 5, "inactive": 6, "disabled": 7}
-    rows = [evaluate(n, now, cfg["station"]["signature"], cfg["timezone"], db.is_done) for n in nets]
-    print(f"{local:%Y-%m-%d (%a) %H:%M} {cfg['timezone']}")
-    print(f"{'STATE':<13} {'CALLSIGN':<12} MESSAGE / DETAIL")
+    order = {"due": 0, "waiting": 1, "missing_word": 2, "too_long": 3, "closed": 4, "done": 5,
+             "no_event": 6, "inactive": 7, "disabled": 8}
+    spread = int(cfg["send"]["default_spread_minutes"])
+    mine = ZoneInfo(cfg["timezone"])
+    rows = [evaluate(n, now, cfg["station"]["signature"], cfg["net_timezone"], db.is_done, spread) for n in nets]
+    print(f"{local:%Y-%m-%d (%a) %H:%M} {cfg['timezone']}  |  net days follow {cfg['net_timezone']} unless a net sets tz")
+    print(f"{'STATE':<13} {'CALLSIGN':<12} {'SEND AT (UTC / yours)':<22} MESSAGE / DETAIL")
     for d in sorted(rows, key=lambda d: (order[d.state], d.net.callsign)):
         if d.state in ("inactive", "disabled", "no_event") and not args.all:
             continue
         info = d.text or ""
         if d.detail:
             info = f"{info}  [{d.detail}]".strip()
-        print(f"{d.state:<13} {d.net.callsign:<12} {info}")
+        when = ""
+        if d.send_at is not None:
+            when = f"{d.send_at.astimezone(dt.timezone.utc):%d %H:%M}Z / {d.send_at.astimezone(mine):%H:%M}"
+        print(f"{d.state:<13} {d.net.callsign:<12} {when:<22} {info}")
     return 0
 
 
@@ -300,11 +318,13 @@ def cmd_report(cfg: dict, args: argparse.Namespace) -> int:
 
 
 def cmd_addword(cfg: dict, args: argparse.Namespace) -> int:
-    """Append a keyword for one or more days to words.csv (by_date nets only)."""
+    """Register a keyword for one or more days in words.csv (by_date nets only)."""
     call = args.callsign.strip().upper()
-    if not any(n.callsign == call and n.mode == "by_date" for n in NetStore(cfg).get()):
+    net = next((n for n in NetStore(cfg).get() if n.callsign == call and n.mode == "by_date"), None)
+    if net is None:
         raise ConfigError(f"{call} is not registered as a by_date net in the nets file")
-    today = utcnow().astimezone(ZoneInfo(cfg["timezone"])).date()
+    tz_name = net.tz or cfg["net_timezone"]  # the net's day (and the --at time) follow this zone
+    today = utcnow().astimezone(ZoneInfo(tz_name)).date()
     try:
         start = dt.date.fromisoformat(args.start) if args.start else today
         end = dt.date.fromisoformat(args.end) if args.end else start
@@ -312,26 +332,26 @@ def cmd_addword(cfg: dict, args: argparse.Namespace) -> int:
         raise ConfigError(f"invalid date: {exc}") from exc
     if end < start:
         raise ConfigError("--to is before --from")
+    at = f"{parse_time(args.at):%H:%M}" if args.at else ""
     word = " ".join(args.word).strip()
 
     path = Path(cfg["paths"]["words_csv"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    has_content = path.exists() and path.stat().st_size > 0
-    prefix = ""
-    if has_content:
-        with open(path, "rb") as fh:
-            fh.seek(-1, os.SEEK_END)
-            if fh.read(1) not in (b"\n", b"\r"):
-                prefix = "\n"
-    with open(path, "a", newline="", encoding="utf-8") as fh:
-        fh.write(prefix)
-        writer = csv.writer(fh, lineterminator="\n")
-        if not has_content:
-            writer.writerow(["callsign", "date", "word"])
-        for offset in range((end - start).days + 1):
-            writer.writerow([call, (start + dt.timedelta(days=offset)).isoformat(), word])
-    days = (end - start).days + 1
-    print(f"{call}: '{word}' registered for {start.isoformat()}" + (f" to {end.isoformat()}" if days > 1 else ""))
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    header = next((i for i, line in enumerate(lines) if line.strip() and not line.lstrip().startswith("#")), None)
+    if header is None:
+        lines.append("callsign,date,word,time")
+    elif lines[header].strip() == "callsign,date,word":
+        lines[header] = "callsign,date,word,time"  # upgrade the older layout
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    for offset in range((end - start).days + 1):
+        writer.writerow([call, (start + dt.timedelta(days=offset)).isoformat(), word, at])
+    path.write_text("\n".join(lines) + "\n" + buffer.getvalue(), encoding="utf-8")
+
+    period = start.isoformat() + (f" to {end.isoformat()}" if end > start else "")
+    when = f"at {at} {tz_name}" if at else f"from the start of the day ({tz_name}, spread)"
+    print(f"{call}: '{word}' registered for {period} {when}")
     return 0
 
 
@@ -363,6 +383,7 @@ def main(argv: list | None = None) -> int:
     addword.add_argument("word", nargs="+", help="the keyword; several words are joined with spaces")
     addword.add_argument("--from", dest="start", help="first day, YYYY-MM-DD (default: today)")
     addword.add_argument("--to", dest="end", help="last day, YYYY-MM-DD (default: same as --from)")
+    addword.add_argument("--at", help="exact run time HH:MM in the net's timezone (default: spread after the day starts)")
     addword.set_defaults(func=cmd_addword)
 
     args = parser.parse_args(argv)

@@ -1,6 +1,8 @@
 # Copy to config.yaml and adjust. Relative paths are resolved from this file's folder.
 
-timezone: America/Sao_Paulo      # default timezone for net schedules
+timezone: America/Sao_Paulo      # YOUR timezone: used to show times and to read `today --at`
+net_timezone: UTC                # timezone that defines a net's day. Most nets run on UTC;
+                                 # a net with its own local time sets `tz:` in nets.yaml
 
 station:
   callsign: PP5PK-7              # callsign + SSID used to send (CHANGE ME)
@@ -22,3 +24,5 @@ send:
   gap_seconds: 5                 # pause between two outgoing messages
   retries: 3                     # total attempts per message while waiting for an ACK
   retry_interval: 60             # seconds between attempts
+  default_spread_minutes: 60     # each net is contacted at a stable pseudo-random moment within this many
+                                 # minutes after its window opens, instead of all at 00:00 (0 = on the dot)
