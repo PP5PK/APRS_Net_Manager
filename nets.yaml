@@ -1,0 +1,206 @@
+# Registered nets. Quote times ("13:00"): YAML reads an unquoted 13:00 as a number.
+#
+# schedule.type : daily | weekly | nth_weekday | date_range
+#   weekdays    : [mon, tue, wed, thu, fri, sat, sun]  (filter; required for weekly / nth_weekday)
+#   nth         : 1-5, or -1 for the last one (nth_weekday only)
+#   start / end : YYYY-MM-DD (date_range; end is optional)
+#   after/before: earliest / latest local time to send
+# mode          : fixed (uses "message") | by_date (uses "words") | by_weekday (uses "words_by_weekday")
+# template      : for by_date / by_weekday, how the word becomes the message (default "{word}")
+# certificate   : link  = download automatically from a link in the reply
+#                 code  = needs a code typed on the website (reply is kept for `report`)
+#                 email = certificate arrives by e-mail (nothing to download)
+#                 none  = the net issues no certificate
+# sporadic      : true = occasional net. Nothing is sent until a word is registered for the day
+#                 (use `netsched addword CALLSIGN WORD --from DATE --to DATE`)
+# word_source   : where the daily word is published (shown when a word is missing)
+# info_url      : the net's website
+# ack           : false for nets that never ACK messages (disables retries)
+# enabled       : false to keep a net registered without sending anything
+#
+# Placeholders: {sig} = station.signature, {word} = the day's word,
+#               {week} = ISO week of the year (APRSThursday "#41").
+
+nets:
+  # ===== Daily and weekly nets ================================================
+  - callsign: APRSMY
+    notes: Daily net, no certificate
+    info_url: aprsmy.hamradio.my
+    schedule: {type: daily}
+    mode: fixed
+    message: CHECK
+    certificate: none
+
+  - callsign: 9M4GKS
+    notes: Daily net, plus a special net on Sunday. Certificate link comes in the reply
+    info_url: aprs.hamfinity.com
+    schedule: {type: daily}
+    mode: fixed
+    message: CQ HAMFINITY {sig}
+    certificate: link
+
+  - callsign: TICANET
+    notes: Daily net. Certificate is e-mailed after entering callsign, received code and e-mail on the website
+    info_url: tinyurl.com/TICANET
+    schedule: {type: daily}
+    mode: fixed
+    message: CQ TICANET
+    certificate: code
+
+  - callsign: TI0RHU-15
+    notes: Daily net with a special event every Saturday and Sunday. Daily certificate link in the reply
+    info_url: https://script.google.com/macros/s/AKfycbz92FfVGYx-xGHpB21ltY4mRixUP63JgSNNYF5Ew3qHk4g1kkSDFErAxNuxvl9lbr3I/exec
+    schedule: {type: daily}
+    mode: fixed
+    message: QSL
+    certificate: link
+
+  - callsign: 9M4CSR
+    notes: Events every Tuesday. Certificate link in the reply. More at sares.org.my
+    info_url: net.hamfinity.com/n/6991baa419be
+    schedule: {type: weekly, weekdays: [tue]}
+    mode: fixed
+    message: CQ SARES {sig}
+    certificate: link
+
+  - callsign: ANSRVR
+    notes: APRSThursday, every Thursday. The number after # is the week of the year. No certificate
+    schedule: {type: weekly, weekdays: [thu]}
+    mode: fixed
+    message: "CQ HOTG {sig} (APRSTh#{week})"
+    certificate: none
+
+  - callsign: 9W4GTS
+    notes: Every Friday. Certificate link in the reply
+    info_url: net.hamfinity.com/n/0e162e43ef17
+    schedule: {type: weekly, weekdays: [fri]}
+    mode: fixed
+    message: CQ KV50S {sig}
+    certificate: link
+
+  # ===== Daily nets with a different word each day =============================
+  # Add the words to words.csv or with `netsched addword`. A missing word is logged as a warning.
+  - callsign: CE4JWI-10
+    notes: Daily net, one specific word per day. Certificate link in the reply
+    word_source: qsl.net/ce4jwi
+    info_url: qsl.net/ce4jwi
+    schedule: {type: daily}
+    mode: by_date
+    certificate: link
+
+  - callsign: CX2JO-10
+    notes: Daily net. Words come in WhatsApp groups via the event folder. Certificate link in the reply
+    word_source: WhatsApp groups (event folder)
+    schedule: {type: daily, after: "13:00"}
+    mode: by_date
+    certificate: link
+
+  - callsign: XE1JMB-10
+    notes: Daily net. Words come in WhatsApp groups via the event folder. Certificate link in the reply
+    word_source: WhatsApp groups (event folder)
+    schedule: {type: daily}
+    mode: by_date
+    template: "CQ APRSMX {word}"
+    certificate: link
+
+  # ===== Sporadic nets: nothing is sent until a word is registered =============
+  - callsign: LU1QAO-3
+    notes: Sporadic. Word is published on the website. Certificate link in the reply
+    word_source: lu1qao.com.ar/aprs-qsl
+    info_url: lu1qao.com.ar/aprs-qsl
+    sporadic: true
+    mode: by_date
+    certificate: link
+    words:
+      2026-10-09: CQ FLEMING
+      2026-10-10: CQ FLEMING
+      2026-10-11: CQ FLEMING
+
+  - callsign: XE1JMB-5
+    notes: Occasional net. Words come in WhatsApp groups via the event folder. Certificate link in the reply
+    word_source: WhatsApp groups (event folder)
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: HR5HAC-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: LU8HEG-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: LU8HEG-5
+    notes: Occasional net, "CQ" plus the password word. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    template: "CQ {word}"
+    certificate: link
+
+  - callsign: YC1SNI-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: LU2DGE-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: XR4MAU-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: LW3DFA-10
+    notes: Occasional net, "CQ" plus the password word. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    template: "CQ {word}"
+    certificate: link
+
+  - callsign: CA4NDW-7
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: OA4DXG-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: YD2SMG-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: 9M26MD
+    notes: Occasional net, "CQ" plus the keyword. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    template: "CQ {word}"
+    certificate: link
+
+  - callsign: PKTNET
+    notes: Occasional net, keyword published in internet groups (normally CHECK). Certificate goes to the e-mail given during CHECK
+    sporadic: true
+    mode: by_date
+    certificate: email
+
+  - callsign: MYANET
+    notes: APRSThursday-style net with a chat room. Certificate only on the first participation
+    info_url: 9w2key.blogspot.com
+    sporadic: true
+    mode: by_date
+    certificate: link

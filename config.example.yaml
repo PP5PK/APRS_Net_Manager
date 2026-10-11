@@ -1,0 +1,24 @@
+# Copy to config.yaml and adjust. Relative paths are resolved from this file's folder.
+
+timezone: America/Sao_Paulo      # default timezone for net schedules
+
+station:
+  callsign: PP5PK-7              # callsign + SSID used to send (CHANGE ME)
+  passcode: ""                   # empty = computed from the callsign; env APRS_PASSCODE overrides
+  signature: "Greetings from Daniel K. / Mafra, SC - Brazil"   # available as {sig} in messages
+
+aprs_is:
+  host: rotate.aprs2.net
+  port: 14580
+
+paths:
+  nets: nets.yaml
+  words_csv: words.csv           # optional: callsign,date,word
+  database: data/netsched.db
+  certificates: certs
+
+send:
+  tick_seconds: 30               # how often the scheduler checks what is due
+  gap_seconds: 5                 # pause between two outgoing messages
+  retries: 3                     # total attempts per message while waiting for an ACK
+  retry_interval: 60             # seconds between attempts

@@ -1,0 +1,15 @@
+[Unit]
+Description=APRS net check-in scheduler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=netsched
+WorkingDirectory=/opt/aprs-net-scheduler
+ExecStart=/opt/aprs-net-scheduler/.venv/bin/python -m netsched --config /opt/aprs-net-scheduler/config.yaml run
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

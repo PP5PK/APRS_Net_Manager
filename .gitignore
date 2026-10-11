@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+config.yaml
+words.csv
+data/
+certs/
+*.db
