@@ -186,6 +186,14 @@ class Loading(unittest.TestCase):
         self.assertEqual(decision.text, "CQ HOTG Greetings from Daniel K. / Mafra, SC - Brazil (APRSTh#41)")
         self.assertEqual(evaluate(ansrvr, at(2026, 10, 9), SIG, "America/Sao_Paulo").state, "inactive")
 
+    def test_malformed_entries_are_config_errors_not_crashes(self):
+        for bad in ("schedule: 5", "words: [1, 2]", "schedule: {type: weekly, weekdays: 7}", "tz: 42"):
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "nets.yaml"
+                path.write_text(f"nets:\n  - {{callsign: X, message: CQ, {bad}}}\n", encoding="utf-8")
+                with self.assertRaises(ConfigError, msg=bad):
+                    load_nets(path)
+
     def test_words_csv_time_column(self):
         nets = [net(callsign="X", mode="by_date", message="")]
         with tempfile.TemporaryDirectory() as tmp:

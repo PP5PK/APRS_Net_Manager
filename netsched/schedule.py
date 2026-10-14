@@ -354,12 +354,26 @@ def merge_words_csv(nets: list, path: str | Path) -> None:
 def load_nets(path: str | Path, words_csv: str | Path | None = None) -> list:
     try:
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    except OSError as exc:
+        raise ConfigError(f"cannot read the nets file {path}: {exc.strerror or exc}") from exc
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path}: invalid YAML: {exc}") from exc
     entries = raw.get("nets") if isinstance(raw, dict) else None
     if not isinstance(entries, list):
         raise ConfigError(f"{path}: expected a top-level 'nets:' list")
-    nets = [Net.from_dict(entry) for entry in entries]
+    nets = []
+    for entry in entries:
+        try:
+            nets.append(Net.from_dict(entry))
+        except ConfigError:
+            raise
+        except (TypeError, AttributeError, KeyError, ValueError) as exc:  # a hand-edited, malformed entry
+            raise ConfigError(f"{path}: invalid net entry {entry!r}: {exc}") from exc
     if words_csv and Path(words_csv).exists():
-        merge_words_csv(nets, words_csv)
+        try:
+            merge_words_csv(nets, words_csv)
+        except UnicodeDecodeError as exc:
+            raise ConfigError(f"{words_csv}: must be saved as UTF-8 ({exc.reason})") from exc
+        except OSError as exc:
+            raise ConfigError(f"cannot read {words_csv}: {exc.strerror or exc}") from exc
     return nets

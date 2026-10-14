@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from netsched.main import load_config, main
+from netsched.main import NetStore, load_config, main
 from netsched.schedule import ConfigError, load_nets
 
 NETS = """\
@@ -72,6 +72,42 @@ class AddWord(unittest.TestCase):
                                             encoding="utf-8")
         with self.assertRaises(ConfigError):
             load_config(str(self.root / "bad.yaml"))
+
+
+class Robustness(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "config.yaml").write_text("station: {callsign: PP5PK-7}\n", encoding="utf-8")
+
+    def test_missing_nets_file_is_a_clean_error_not_a_traceback(self):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = main(["--config", str(self.root / "config.yaml"), "today"])
+        self.assertEqual(code, 2)
+        self.assertIn("cannot read the nets file", err.getvalue())
+
+    def test_today_and_report_do_not_create_the_database(self):
+        (self.root / "nets.yaml").write_text(NETS, encoding="utf-8")
+        for command in ("today", "report"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["--config", str(self.root / "config.yaml"), command]), 0)
+        self.assertFalse((self.root / "data").exists())
+
+    def test_words_csv_must_be_utf8(self):
+        (self.root / "nets.yaml").write_text(NETS, encoding="utf-8")
+        (self.root / "words.csv").write_bytes("callsign,date,word\nLU8HEG-5,2026-11-01,\xc1NGAMOS\n".encode("latin-1"))
+        with self.assertRaises(ConfigError) as ctx:
+            load_nets(self.root / "nets.yaml", self.root / "words.csv")
+        self.assertIn("UTF-8", str(ctx.exception))
+
+    def test_nets_file_vanishing_while_running_keeps_the_previous_nets(self):
+        (self.root / "nets.yaml").write_text(NETS, encoding="utf-8")
+        store = NetStore(load_config(str(self.root / "config.yaml")))
+        before = store.get()
+        (self.root / "nets.yaml").unlink()
+        self.assertIs(store.get(), before)
 
 
 if __name__ == "__main__":

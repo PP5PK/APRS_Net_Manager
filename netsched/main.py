@@ -80,7 +80,10 @@ class NetStore:
     def __init__(self, cfg: dict):
         self.path = Path(cfg["paths"]["nets"])
         self.words_csv = Path(cfg["paths"]["words_csv"])
-        self._mtime = self._current_mtime()
+        try:
+            self._mtime = self._current_mtime()
+        except OSError as exc:
+            raise ConfigError(f"cannot read the nets file {self.path}: {exc.strerror or exc}") from exc
         self._nets = load_nets(self.path, self.words_csv)  # fail fast on first load
 
     def _current_mtime(self) -> float:
@@ -90,7 +93,11 @@ class NetStore:
         return max(times)
 
     def get(self) -> list:
-        mtime = self._current_mtime()
+        try:
+            mtime = self._current_mtime()
+        except OSError as exc:  # the file vanished while running: keep working with what we have
+            log.error("nets file not readable, keeping previous version: %s", exc)
+            return self._nets
         if mtime != self._mtime:
             self._mtime = mtime
             try:
@@ -284,13 +291,17 @@ def _resolve_now(at: str | None, tz: str) -> dt.datetime:
 def cmd_today(cfg: dict, args: argparse.Namespace) -> int:
     now = _resolve_now(args.at, cfg["timezone"])
     local = now.astimezone(ZoneInfo(cfg["timezone"]))
-    db = Database(cfg["paths"]["database"])
     nets = NetStore(cfg).get()
+    db_path = Path(cfg["paths"]["database"])
+    db = Database(db_path) if db_path.exists() else None  # a read-only command must not create the file
+    is_done = db.is_done if db else (lambda callsign, day, text: False)
     order = {"due": 0, "waiting": 1, "missing_word": 2, "too_long": 3, "closed": 4, "done": 5,
              "no_event": 6, "inactive": 7, "disabled": 8}
     spread = int(cfg["send"]["default_spread_minutes"])
     mine = ZoneInfo(cfg["timezone"])
-    rows = [evaluate(n, now, cfg["station"]["signature"], cfg["net_timezone"], db.is_done, spread) for n in nets]
+    rows = [evaluate(n, now, cfg["station"]["signature"], cfg["net_timezone"], is_done, spread) for n in nets]
+    if db:
+        db.close()
     print(f"{local:%Y-%m-%d (%a) %H:%M} {cfg['timezone']}  |  net days follow {cfg['net_timezone']} unless a net sets tz")
     print(f"{'STATE':<13} {'CALLSIGN':<12} {'SEND AT (UTC / yours)':<22} MESSAGE / DETAIL")
     for d in sorted(rows, key=lambda d: (order[d.state], d.net.callsign)):
@@ -307,8 +318,13 @@ def cmd_today(cfg: dict, args: argparse.Namespace) -> int:
 
 
 def cmd_report(cfg: dict, args: argparse.Namespace) -> int:
-    db = Database(cfg["paths"]["database"])
+    db_path = Path(cfg["paths"]["database"])
+    if not db_path.exists():  # nothing has run yet; do not create the file
+        print("Nothing needs manual attention.")
+        return 0
+    db = Database(db_path)
     rows = db.open_certificates()
+    db.close()
     if not rows:
         print("Nothing needs manual attention.")
         return 0
