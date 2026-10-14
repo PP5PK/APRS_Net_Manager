@@ -16,22 +16,29 @@ participation certificate when the reply contains a direct link.
 
 ## Quick start
 
+Needs Python 3.9+ and two libraries. On Debian, Ubuntu and Raspberry Pi OS install
+them with `apt`, so **no virtual environment is needed**:
+
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
+sudo apt install -y python3 python3-yaml python3-requests tzdata git
+git clone https://github.com/PP5PK/APRS_Net_Manager.git
+cd APRS_Net_Manager
 
 cp config.example.yaml config.yaml     # set station.callsign (with SSID)
-python -m netsched today               # what is due right now (sends nothing)
-python -m netsched today --at 2026-10-11T14:00 --all
-python -m netsched run --dry-run       # full loop, but never connects
-python -m netsched run                 # live
-python -m netsched report              # certificates that need manual download
+python3 -m netsched today              # what is due right now (sends nothing)
+python3 -m netsched today --at 2026-10-11T14:00 --all
+python3 -m netsched run --dry-run      # full loop, but never connects
+python3 -m netsched run                # live
+python3 -m netsched report             # certificates that need manual download
 
 # register the word of an occasional net (a day or a range, optionally at an exact time)
-python -m netsched addword LU8HEG-5 MESSI --from 2026-11-01 --to 2026-11-03 --at 14:30
+python3 -m netsched addword LU8HEG-5 MESSI --from 2026-11-01 --to 2026-11-03 --at 14:30
 ```
 
-Run the tests with `python -m unittest discover -s tests -t .`.
+On other systems install the libraries with `pip install -r requirements.txt`
+(inside a virtual environment if your Python is "externally managed").
+
+Run the tests with `python3 -m unittest discover -s tests -t .`.
 
 ## Registering nets
 
@@ -102,18 +109,41 @@ hit the same net at 00:00:
 exact time. Registering it also fixes the run time for those days:
 
 ```bash
-python -m netsched addword LU8HEG-5 MESSI --from 2026-11-01 --to 2026-11-03 --at 14:30
+python3 -m netsched addword LU8HEG-5 MESSI --from 2026-11-01 --to 2026-11-03 --at 14:30
 ```
 
 In `nets.yaml` the same thing is `words: {2026-11-01: {word: MESSI, at: "14:30"}}`,
 and in `words.csv` it is the optional `time` column. The time is in the net's
-timezone. `python -m netsched today` shows, for every net, when it will be sent
+timezone. `python3 -m netsched today` shows, for every net, when it will be sent
 (UTC and your own time).
 
-## Running as a service
+## Running as a service (systemd)
 
-`deploy/netsched.service` is a systemd unit. The APRS-IS passcode is computed
-from the callsign; set `APRS_PASSCODE` in the environment to override it.
+After the `apt install` line above:
+
+```bash
+sudo useradd --system --home-dir /opt/APRS_Net_Manager netsched
+sudo git clone https://github.com/PP5PK/APRS_Net_Manager.git /opt/APRS_Net_Manager
+cd /opt/APRS_Net_Manager
+sudo cp config.example.yaml config.yaml
+sudo nano config.yaml                   # station.callsign, signature
+sudo chown -R netsched: /opt/APRS_Net_Manager
+
+sudo -u netsched python3 -m netsched today          # check before enabling
+
+sudo cp deploy/netsched.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now netsched
+journalctl -u netsched -f               # follow the log
+```
+
+To update later: `sudo -u netsched git -C /opt/APRS_Net_Manager pull` and
+`sudo systemctl restart netsched`. Edits to `nets.yaml` and `words.csv` are picked
+up without a restart.
+
+The APRS-IS passcode is computed from the callsign; set `APRS_PASSCODE` in the
+environment to override it. If APRS-IS rejects the login the service stops
+instead of retrying forever; check the log.
 
 ## Safety notes
 

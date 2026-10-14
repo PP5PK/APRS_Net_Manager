@@ -6,9 +6,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=netsched
-WorkingDirectory=/opt/aprs-net-scheduler
-ExecStart=/opt/aprs-net-scheduler/.venv/bin/python -m netsched --config /opt/aprs-net-scheduler/config.yaml run
-Restart=always
+WorkingDirectory=/opt/APRS_Net_Manager
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m netsched --config /opt/APRS_Net_Manager/config.yaml run
+# Restart after a crash, but not after a clean stop (for example a rejected APRS-IS login).
+Restart=on-failure
 RestartSec=10
 
 [Install]
