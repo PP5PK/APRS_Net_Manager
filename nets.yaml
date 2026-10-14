@@ -8,8 +8,8 @@
 #   after/before: window in which to send. The send time is chosen inside it; nothing is sent after "before"
 #   spread      : minutes over which the send time is spread after the window opens, so the nets are not
 #                 all contacted at 00:00 (default: send.default_spread_minutes in config.yaml; 0 = on time)
-# tz            : timezone that defines the net's day and its times (default: net_timezone in config.yaml,
-#                 normally UTC). Set it for nets that run on their own local time.
+# tz            : timezone that defines the net's day and its times (default: net_timezone in config.yaml, UTC).
+#                 All current nets run on UTC; set it only for a net that uses its own local time.
 # mode          : fixed (uses "message") | by_date (uses "words") | by_weekday (uses "words_by_weekday")
 # template      : for by_date / by_weekday, how the word becomes the message (default "{word}")
 # certificate   : link  = download automatically from a link in the reply
@@ -97,7 +97,6 @@ nets:
   - callsign: CX2JO-10
     notes: Daily net. Words come in WhatsApp groups via the event folder. Certificate link in the reply
     word_source: WhatsApp groups (event folder)
-    tz: America/Montevideo        # the "after 13:00" rule is in Uruguayan local time
     schedule: {type: daily, after: "13:00"}
     mode: by_date
     certificate: link

@@ -172,7 +172,7 @@ class Loading(unittest.TestCase):
         self.assertEqual(by_call["9W4GTS"].schedule.weekdays, (4,))
         self.assertEqual(by_call["CX2JO-10"].schedule.after, dt.time(13, 0))
         self.assertEqual(by_call["CX2JO-10"].mode, "by_date")
-        self.assertEqual(by_call["CX2JO-10"].tz, "America/Montevideo")
+        self.assertTrue(all(net.tz is None for net in nets))  # every net follows UTC
         self.assertEqual(by_call["TICANET"].certificate, "code")
         self.assertEqual(by_call["PKTNET"].certificate, "email")
         self.assertEqual(by_call["ANSRVR"].certificate, "none")
