@@ -168,9 +168,8 @@ class Loading(unittest.TestCase):
     def test_repository_nets_file_loads(self):
         nets = load_nets(Path(__file__).resolve().parent.parent / "nets.yaml")
         by_call = {n.callsign: n for n in nets}
-        self.assertEqual(len(by_call), len(nets))  # no duplicate callsigns
         self.assertEqual(by_call["9W4GTS"].schedule.weekdays, (4,))
-        self.assertEqual(by_call["CX2JO-10"].schedule.after, dt.time(13, 0))
+        self.assertEqual(by_call["CX2JO-10"].schedule.after, dt.time(14, 30))  # UTC
         self.assertEqual(by_call["CX2JO-10"].mode, "by_date")
         self.assertTrue(all(net.tz is None for net in nets))  # every net follows UTC
         self.assertEqual(by_call["TICANET"].certificate, "code")
@@ -178,9 +177,23 @@ class Loading(unittest.TestCase):
         self.assertEqual(by_call["ANSRVR"].certificate, "none")
         self.assertTrue(by_call["HR5HAC-10"].sporadic)
 
+    def test_entries_sharing_a_callsign_never_fall_on_the_same_day(self):
+        # ANSRVR hosts several nets (Thursday, weekends, 2nd Monday): one message per day at most
+        groups = {}
+        for n in load_nets(Path(__file__).resolve().parent.parent / "nets.yaml"):
+            groups.setdefault(n.callsign, []).append(n)
+        shared = {call: entries for call, entries in groups.items() if len(entries) > 1}
+        self.assertIn("ANSRVR", shared)
+        day = dt.date(2026, 1, 1)
+        while day <= dt.date(2027, 12, 31):
+            for call, entries in shared.items():
+                active = [n for n in entries if n.schedule.is_active_on(day) and n.render(day, SIG) is not None]
+                self.assertLessEqual(len(active), 1, f"{call} has two messages on {day}")
+            day += dt.timedelta(days=1)
+
     def test_aprs_thursday_message_matches_the_real_one(self):
         nets = load_nets(Path(__file__).resolve().parent.parent / "nets.yaml")
-        ansrvr = {n.callsign: n for n in nets}["ANSRVR"]
+        ansrvr = next(n for n in nets if n.callsign == "ANSRVR" and "HOTG" in n.message)
         decision = evaluate(ansrvr, at(2026, 10, 8), SIG, "America/Sao_Paulo")  # Thursday of week 41
         self.assertEqual(decision.state, "due")
         self.assertEqual(decision.text, "CQ HOTG Greetings from Daniel K. / Mafra, SC - Brazil (APRSTh#41)")
