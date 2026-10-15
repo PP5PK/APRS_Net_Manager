@@ -103,7 +103,7 @@ class Schedule:
     nth: int | None = None
     start: dt.date | None = None
     end: dt.date | None = None
-    after: dt.time = dt.time(0, 0)   # the window opens (net-local time); `at:` is the exact-time form
+    after: dt.time | None = None     # the window opens (net-local time); None = send.default_start. `at:` is the exact form
     before: dt.time | None = None    # the window closes; nothing is sent after it
     spread: int | None = None        # minutes over which the send time is spread (None = config default)
 
@@ -118,6 +118,7 @@ class Schedule:
             raw_days = [raw_days]
         if "at" in data and "after" in data:
             raise ConfigError("use either 'at' or 'after' in a schedule, not both")
+        opens = data.get("at", data.get("after"))
         spread = data.get("spread")
         if "at" in data and spread is None:
             spread = 0  # an exact time is never spread
@@ -131,7 +132,7 @@ class Schedule:
             nth=data.get("nth"),
             start=_to_date(data["start"]) if data.get("start") else None,
             end=_to_date(data["end"]) if data.get("end") else None,
-            after=_to_time(data.get("at", data.get("after", "00:00"))),
+            after=_to_time(opens) if opens is not None else None,
             before=_to_time(data["before"]) if data.get("before") else None,
             spread=spread,
         )
@@ -147,7 +148,7 @@ class Schedule:
             raise ConfigError("date_range needs 'start'")
         if self.start and self.end and self.end < self.start:
             raise ConfigError("schedule 'end' is before 'start'")
-        if self.before is not None and self.before < self.after:
+        if self.before is not None and self.after is not None and self.before < self.after:
             raise ConfigError("schedule 'before' is earlier than 'after'")
         if self.spread is not None and self.spread < 0:
             raise ConfigError("schedule 'spread' cannot be negative")
@@ -268,13 +269,27 @@ def _offset_seconds(callsign: str, day: dt.date, spread_minutes: int) -> int:
     return int.from_bytes(digest[:4], "big") % (spread_minutes * 60 + 1)
 
 
-def send_time(net: Net, day: dt.date, tz: ZoneInfo, default_spread: int = 0) -> dt.datetime:
-    """The instant `net` is to be contacted on `day` (a date in the net's own timezone)."""
+def send_time(
+    net: Net,
+    day: dt.date,
+    tz: ZoneInfo,
+    default_spread: int = 0,
+    default_start: dt.time = dt.time(0, 0),
+) -> dt.datetime:
+    """The instant `net` is to be contacted on `day` (a date in the net's own timezone).
+
+    The window opens at the net's `after`, else at `default_start`; the send time is
+    spread over `spread` minutes after it. An exact time (`at`, or an event time) wins.
+    """
     explicit = net.word_times.get(day) if net.mode == "by_date" else None
     if explicit is not None:
         opens, spread = explicit, 0                       # a time given for the event is exact
     else:
         opens = net.schedule.after
+        if opens is None:
+            opens = default_start
+            if net.schedule.before is not None and net.schedule.before < opens:
+                opens = dt.time(0, 0)  # the global start would fall after this net's own deadline
         spread = net.schedule.spread if net.schedule.spread is not None else default_spread
     when = dt.datetime.combine(day, opens, tzinfo=tz) + dt.timedelta(
         seconds=_offset_seconds(net.callsign, day, spread)
@@ -290,6 +305,7 @@ def evaluate(
     default_tz: str = "UTC",
     is_done: Callable[[str, dt.date, str], bool] = lambda callsign, day, text: False,
     default_spread: int = 0,
+    default_start: dt.time = dt.time(0, 0),
 ) -> Decision:
     """Decide what should happen for `net` at the (timezone-aware) instant `now`.
 
@@ -310,7 +326,7 @@ def evaluate(
         return Decision(net, "missing_word", day, detail=f"no word for {day.isoformat()}{hint}")
     if len(text) > MAX_MESSAGE_LEN:
         return Decision(net, "too_long", day, text, f"{len(text)} chars (max {MAX_MESSAGE_LEN})")
-    send_at = send_time(net, day, tz, default_spread)
+    send_at = send_time(net, day, tz, default_spread, default_start)
     if is_done(net.callsign, day, text):
         return Decision(net, "done", day, text, send_at=send_at)
     if net.schedule.before is not None and local > dt.datetime.combine(day, net.schedule.before, tzinfo=tz):

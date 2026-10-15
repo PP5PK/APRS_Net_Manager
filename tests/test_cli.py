@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from netsched.main import NetStore, load_config, main
-from netsched.schedule import ConfigError, load_nets
+from netsched.schedule import ConfigError, load_nets, parse_time
 
 NETS = """\
 nets:
@@ -66,6 +66,18 @@ class AddWord(unittest.TestCase):
                      ("addword", "LU8HEG-5", "X", "--from", "2026-11-05", "--to", "2026-11-01")):
             self.assertEqual(self.run_cli(*argv)[0], 2, argv)
         self.assertFalse(self.csv.exists())
+
+    def test_default_start_is_read_validated_and_accepts_unquoted_yaml_time(self):
+        for text, expected in (('"03:00"', "03:00"), ("03:00", "03:00"), ("0:00", "00:00")):
+            (self.root / "c.yaml").write_text(f"station: {{callsign: PP5PK-7}}\nsend: {{default_start: {text}}}\n",
+                                              encoding="utf-8")
+            cfg = load_config(str(self.root / "c.yaml"))
+            self.assertEqual(f"{parse_time(cfg['send']['default_start']):%H:%M}", expected, text)
+        (self.root / "c.yaml").write_text('station: {callsign: PP5PK-7}\nsend: {default_start: "25:00"}\n',
+                                          encoding="utf-8")
+        with self.assertRaises(ConfigError) as ctx:
+            load_config(str(self.root / "c.yaml"))
+        self.assertIn("send.default_start", str(ctx.exception))
 
     def test_an_unknown_timezone_in_the_config_is_rejected(self):
         (self.root / "bad.yaml").write_text("station: {callsign: PP5PK-7}\nnet_timezone: Nowhere/Land\n",

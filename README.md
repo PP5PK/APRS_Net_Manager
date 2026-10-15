@@ -79,6 +79,7 @@ command: `python3 -m netsched --config /path/config.yaml today`.
 | `send.tick_seconds` | how often the schedule is checked (30) |
 | `send.gap_seconds` | pause between two outgoing messages (5) |
 | `send.retries` / `retry_interval` | attempts per message while waiting for an ACK (3) and seconds between them (60) |
+| `send.default_start` | time of day (net time, UTC) at which the send window opens, for nets that do not set their own `after` or `at` (`"00:00"`; use `"03:00"` to start at 03:00Z). Keep the quotes |
 | `send.default_spread_minutes` | spread of the send time after the window opens (60) |
 
 Messages are limited to 67 characters; a longer one is reported as `too_long` and
@@ -151,8 +152,8 @@ hit the same net at 00:00:
 
 | In `schedule:` | Effect |
 | --- | --- |
-| *(nothing)* | window opens at 00:00 and the send is spread over `send.default_spread_minutes` (60) |
-| `after: "13:00"` | window opens at 13:00 (net time), then the same spread |
+| *(nothing)* | window opens at `send.default_start` (00:00) and the send is spread over `send.default_spread_minutes` (60) |
+| `after: "13:00"` | window opens at 13:00 (net time) instead of the default start, then the same spread |
 | `at: "14:30"` | exactly 14:30, no spread |
 | `before: "18:00"` | the send is never later than this; after it the net shows as `closed` |
 | `spread: 15` | this net only: spread over 15 minutes (0 = on the dot) |

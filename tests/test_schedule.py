@@ -115,6 +115,7 @@ class SendTimes(unittest.TestCase):
     def test_at_means_an_exact_time_without_spread(self):
         s = Schedule.from_dict({"at": "14:30"})
         self.assertEqual((s.after, s.spread), (dt.time(14, 30), 0))
+        self.assertIsNone(Schedule.from_dict({}).after)  # no start given: send.default_start applies
         with self.assertRaises(ConfigError):
             Schedule.from_dict({"at": "14:30", "after": "10:00"})
 
@@ -158,6 +159,32 @@ class SendTimes(unittest.TestCase):
         rule = {"type": "weekly", "weekdays": ["sun"], "at": "00:00"}
         self.assertEqual(evaluate(net(schedule=rule), now, default_tz="UTC").state, "due")
         self.assertEqual(evaluate(net(schedule=rule, tz="America/Sao_Paulo"), now, default_tz="UTC").state, "inactive")
+
+    def test_the_window_opens_at_the_configured_default_start(self):
+        three = dt.time(3, 0)
+        opens = dt.datetime(2026, 10, 11, 3, 0, tzinfo=UTC)
+        for call in ("A1", "B2", "C3", "D4", "E5", "F6"):
+            when = send_time(net(callsign=call), self.DAY, UTC_ZONE, 60, three)
+            self.assertTrue(opens <= when <= opens + dt.timedelta(minutes=60), (call, when))
+        n = net()
+        self.assertEqual(evaluate(n, dt.datetime(2026, 10, 11, 2, 59, tzinfo=UTC), default_tz="UTC",
+                                  default_start=three).state, "waiting")
+        self.assertEqual(evaluate(n, dt.datetime(2026, 10, 11, 3, 0, tzinfo=UTC), default_tz="UTC",
+                                  default_start=three).state, "due")
+
+    def test_a_net_start_wins_over_the_default_start(self):
+        three = dt.time(3, 0)
+        after = net(schedule={"after": "10:00", "spread": 0})
+        at = net(schedule={"at": "14:30"})
+        event = net(mode="by_date", message="", words={"2026-10-11": {"word": "X", "at": "08:15"}})
+        self.assertEqual(send_time(after, self.DAY, UTC_ZONE, 60, three), dt.datetime(2026, 10, 11, 10, 0, tzinfo=UTC))
+        self.assertEqual(send_time(at, self.DAY, UTC_ZONE, 60, three), dt.datetime(2026, 10, 11, 14, 30, tzinfo=UTC))
+        self.assertEqual(send_time(event, self.DAY, UTC_ZONE, 60, three), dt.datetime(2026, 10, 11, 8, 15, tzinfo=UTC))
+
+    def test_default_start_after_the_net_deadline_falls_back_to_midnight(self):
+        n = net(schedule={"before": "02:00", "spread": 0})
+        when = send_time(n, self.DAY, UTC_ZONE, 0, dt.time(3, 0))
+        self.assertEqual(when, dt.datetime(2026, 10, 11, 0, 0, tzinfo=UTC))
 
     def test_unknown_timezone_is_rejected(self):
         with self.assertRaises(ConfigError):

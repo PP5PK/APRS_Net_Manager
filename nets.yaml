@@ -5,7 +5,8 @@
 #   nth         : 1-5, or -1 for the last one (nth_weekday only)
 #   start / end : YYYY-MM-DD (date_range; end is optional)
 #   at          : exact time to send, e.g. "14:30" (not spread)
-#   after/before: window in which to send. The send time is chosen inside it; nothing is sent after "before"
+#   after/before: window in which to send ("after" defaults to send.default_start in config.yaml).
+#                 The send time is chosen inside it; nothing is sent after "before"
 #   spread      : minutes over which the send time is spread after the window opens, so the nets are not
 #                 all contacted at 00:00 (default: send.default_spread_minutes in config.yaml; 0 = on time)
 # tz            : timezone that defines the net's day and its times (default: net_timezone in config.yaml, UTC).

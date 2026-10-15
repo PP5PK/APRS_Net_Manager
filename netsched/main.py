@@ -39,6 +39,7 @@ DEFAULTS = {
         "gap_seconds": 5,
         "retries": 3,
         "retry_interval": 60,
+        "default_start": "00:00",      # when the send window opens each day (net time, UTC) unless the net says otherwise
         "default_spread_minutes": 60,  # spread send times after the window opens (0 = exactly on time)
     },
 }
@@ -69,6 +70,10 @@ def load_config(path: str) -> dict:
         check_timezone(str(cfg[key]), f"config '{key}'")
     if int(cfg["send"]["default_spread_minutes"]) < 0:
         raise ConfigError("send.default_spread_minutes cannot be negative")
+    try:
+        parse_time(cfg["send"]["default_start"])
+    except ConfigError as exc:
+        raise ConfigError(f"config 'send.default_start': {exc}") from exc
     for key, value in cfg["paths"].items():
         cfg["paths"][key] = str((cfg_path.parent / value).resolve())
     return cfg
@@ -126,6 +131,7 @@ class Daemon:
         self.signature = cfg["station"]["signature"]
         self.tz = cfg["net_timezone"]
         self.spread = int(cfg["send"]["default_spread_minutes"])
+        self.start = parse_time(cfg["send"]["default_start"])
         self.db = Database(":memory:" if dry_run else cfg["paths"]["database"])
         self.store = NetStore(cfg)
         self.cert_dir = Path(cfg["paths"]["certificates"])
@@ -165,7 +171,7 @@ class Daemon:
         now = utcnow()
         send_cfg = self.cfg["send"]
         for net in self.store.get():
-            decision = evaluate(net, now, self.signature, self.tz, self.db.is_done, self.spread)
+            decision = evaluate(net, now, self.signature, self.tz, self.db.is_done, self.spread, self.start)
             if decision.state in ("missing_word", "too_long"):
                 key = (net.callsign, decision.day, decision.state)
                 if key not in self._warned:
@@ -298,8 +304,9 @@ def cmd_today(cfg: dict, args: argparse.Namespace) -> int:
     order = {"due": 0, "waiting": 1, "missing_word": 2, "too_long": 3, "closed": 4, "done": 5,
              "no_event": 6, "inactive": 7, "disabled": 8}
     spread = int(cfg["send"]["default_spread_minutes"])
+    start = parse_time(cfg["send"]["default_start"])
     mine = ZoneInfo(cfg["timezone"])
-    rows = [evaluate(n, now, cfg["station"]["signature"], cfg["net_timezone"], is_done, spread) for n in nets]
+    rows = [evaluate(n, now, cfg["station"]["signature"], cfg["net_timezone"], is_done, spread, start) for n in nets]
     if db:
         db.close()
     print(f"{local:%Y-%m-%d (%a) %H:%M} {cfg['timezone']}  |  net days follow {cfg['net_timezone']} unless a net sets tz")

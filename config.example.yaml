@@ -24,5 +24,7 @@ send:
   gap_seconds: 5                 # pause between two outgoing messages
   retries: 3                     # total attempts per message while waiting for an ACK
   retry_interval: 60             # seconds between attempts
+  default_start: "00:00"         # when the send window opens each day (UTC; a net can set its own `after`/`at`).
+                                 # With "03:00" the random send times fall between 03:00Z and 03:00Z + spread. Keep the quotes
   default_spread_minutes: 60     # each net is contacted at a stable pseudo-random moment within this many
                                  # minutes after its window opens, instead of all at 00:00 (0 = on the dot)
