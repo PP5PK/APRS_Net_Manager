@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import hashlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -65,6 +66,65 @@ def _fill(template: str, **values: str) -> str:
     for key, val in values.items():
         template = template.replace("{" + key + "}", val)
     return template
+
+
+DIALOG_TOKENS = ("name", "email", "call")  # station values usable in dialog rules
+
+
+@dataclass
+class DialogRule:
+    """One step of a conversation: when a reply matches `when`, answer with `send`."""
+    when: str           # regular expression, case-insensitive. {name}/{email}/{call} are filled in (escaped)
+    send: str = ""      # the answer. Besides the tokens above, {1}, {2}... are the groups captured by `when`
+    done: bool = False  # true = the conversation ends here (nothing is sent)
+
+    def pattern(self, values: dict) -> "re.Pattern":
+        text = self.when
+        for key in DIALOG_TOKENS:
+            text = text.replace("{" + key + "}", re.escape(values.get(key, "")))
+        return re.compile(text, re.IGNORECASE)
+
+    def needs(self) -> set:
+        """Station values this rule uses."""
+        return {k for k in DIALOG_TOKENS if "{" + k + "}" in self.when + self.send}
+
+    def answer(self, values: dict, match: "re.Match") -> str:
+        text = self.send
+        for key in DIALOG_TOKENS:
+            text = text.replace("{" + key + "}", values.get(key, ""))
+        for number, group in enumerate(match.groups(), 1):
+            text = text.replace("{" + str(number) + "}", group or "")
+        return text.strip()
+
+
+def _parse_dialog(callsign: str, raw) -> list:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ConfigError(f"{callsign}: 'dialog' must be a list of rules")
+    rules = []
+    for number, item in enumerate(raw, 1):
+        if not isinstance(item, dict) or not str(item.get("when", "")).strip():
+            raise ConfigError(f"{callsign}: dialog rule {number} needs 'when'")
+        rule = DialogRule(str(item["when"]), str(item.get("send", "") or ""), bool(item.get("done", False)))
+        if not rule.send.strip() and not rule.done:
+            raise ConfigError(f"{callsign}: dialog rule {number} needs 'send' (or 'done: true')")
+        try:
+            rule.pattern({k: "x" for k in DIALOG_TOKENS})
+        except re.error as exc:
+            raise ConfigError(f"{callsign}: dialog rule {number} has an invalid regular expression: {exc}") from exc
+        rules.append(rule)
+    return rules
+
+
+def _positive_int(callsign: str, data: dict, key: str, default: int, minimum: int = 0) -> int:
+    try:
+        value = int(data.get(key, default))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{callsign}: '{key}' must be a number") from exc
+    if value < minimum:
+        raise ConfigError(f"{callsign}: '{key}' must be at least {minimum}")
+    return value
 
 
 def check_timezone(name: str, where: str) -> str:
@@ -187,6 +247,10 @@ class Net:
     sporadic: bool = False      # no word for the day = nothing to do (not a warning)
     info_url: str = ""          # net website, shown for manual steps
     word_source: str = ""       # where the daily word is published, shown in warnings
+    dialog: list = field(default_factory=list)   # reply-driven conversation rules (see DialogRule)
+    dialog_timeout: int = 15    # minutes after the first message during which replies are answered
+    dialog_max_steps: int = 6   # answers sent per conversation, at most
+    dialog_delay: int = 3       # seconds to wait before each answer
 
     @classmethod
     def from_dict(cls, data: dict) -> "Net":
@@ -223,6 +287,10 @@ class Net:
             sporadic=bool(data.get("sporadic", False)),
             info_url=str(data.get("info_url", "") or ""),
             word_source=str(data.get("word_source", "") or ""),
+            dialog=_parse_dialog(callsign, data.get("dialog")),
+            dialog_timeout=_positive_int(callsign, data, "dialog_timeout", 15, 1),
+            dialog_max_steps=_positive_int(callsign, data, "dialog_max_steps", 6, 1),
+            dialog_delay=_positive_int(callsign, data, "dialog_delay", 3),
         )
 
     def word_for(self, day: dt.date) -> str | None:

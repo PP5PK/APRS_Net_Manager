@@ -40,6 +40,16 @@ CREATE TABLE IF NOT EXISTS certificates (
     error      TEXT,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS dialog_steps (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    send_id    INTEGER NOT NULL REFERENCES sends(id),
+    rule_index INTEGER NOT NULL,
+    text       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    acked_at   TEXT,
+    UNIQUE (send_id, rule_index)
+);
 """
 # sends.status: pending | sent | acked | rejected | no_ack | unconfirmed
 # certificates.status: downloaded | manual | failed
@@ -158,6 +168,31 @@ class Database:
                 (send_id, src.upper(), text, msgno, iso(now)),
             )
         return cur.lastrowid
+
+    # --------------------------------------------------------------- dialogs
+
+    def dialog_used(self, send_id: int) -> set:
+        """Rule numbers already used in the conversation started by this send."""
+        rows = self.conn.execute("SELECT rule_index FROM dialog_steps WHERE send_id = ?", (send_id,)).fetchall()
+        return {row[0] for row in rows}
+
+    def add_dialog_step(self, send_id: int, rule_index: int, text: str, now: dt.datetime) -> int | None:
+        try:
+            with self.conn:
+                cur = self.conn.execute(
+                    "INSERT INTO dialog_steps (send_id, rule_index, text, created_at) VALUES (?, ?, ?, ?)",
+                    (send_id, rule_index, text, iso(now)),
+                )
+        except sqlite3.IntegrityError:
+            return None
+        return cur.lastrowid
+
+    def mark_step_ack(self, step_id: int, now: dt.datetime) -> bool:
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE dialog_steps SET acked_at = ? WHERE id = ? AND acked_at IS NULL", (iso(now), step_id)
+            )
+        return cur.rowcount > 0
 
     # ----------------------------------------------------------- certificates
 

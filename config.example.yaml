@@ -8,6 +8,8 @@ station:
   callsign: PP5PK-7              # callsign + SSID used to send (CHANGE ME)
   passcode: ""                   # empty = computed from the callsign; env APRS_PASSCODE overrides
   signature: "Greetings from Daniel K. / Mafra, SC - Brazil"   # available as {sig} in messages
+  name: "Daniel Kondlatsch"      # your name as it must appear on certificates ({name} in nets' dialog rules)
+  email: "you@example.com"       # certificates are sent here ({email} in dialog rules; leave empty if unused)
 
 aprs_is:
   host: rotate.aprs2.net

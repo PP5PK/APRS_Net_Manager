@@ -283,10 +283,27 @@ nets:
     certificate: link
 
   - callsign: PKTNET
-    notes: Occasional net, keyword published in internet groups (normally CHECK). Certificate goes to the e-mail given during CHECK
-    sporadic: true
-    mode: by_date
+    notes: >
+      Daily net (a new event starts at 00:00 UTC). CHECK, then a short conversation with the bot:
+      certificate e-mail and the name to print. The answers use station.name / station.email from config.yaml
+    info_url: aprsnets.com/pktnet
+    schedule: {type: daily}
+    mode: fixed
+    message: CHECK
     certificate: email
+    dialog:
+      # Returning participant: the bot shows the saved data ("[2/2]: Ant: NAME / EMAIL")
+      - when: '\[2/2\].*Ant:\s*{name}\s*/\s*{email}'   # saved data are still right
+        send: SIM
+      - when: '\[2/2\]'                                  # saved data differ: start over (bot asks e-mail again)
+        send: NAO
+      # First time (or after NAO)
+      - when: 'Deseja o certificado'
+        send: "{email}"
+      - when: 'Usar "{name}"'                             # bot proposes the right name
+        send: SIM
+      - when: 'Usar "'                                    # bot proposes another name
+        send: "{name}"
 
   - callsign: MYANET
     notes: APRSThursday-style net with a chat room. Certificate only on the first participation

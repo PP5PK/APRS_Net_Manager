@@ -71,6 +71,7 @@ command: `python3 -m netsched --config /path/config.yaml today`.
 | --- | --- |
 | `station.callsign` | **required.** Callsign with SSID used to send and receive |
 | `station.signature` | text that replaces `{sig}` in messages |
+| `station.name`, `station.email` | your name and e-mail, filled into `{name}` / `{email}` of a net's `dialog` rules (see Conversations) |
 | `station.passcode` | normally empty (calculated). `APRS_PASSCODE` in the environment overrides it |
 | `timezone` | your own zone, used only to display times and to read `today --at` |
 | `net_timezone` | zone that defines a net's day (default `UTC`) |
@@ -135,6 +136,38 @@ name `word_source` so you know where to look.
 **Certificate modes:** `link` downloads the file automatically; `code` keeps the
 reply (it may carry the code) and lists it in `report` together with the net's
 website; `email` just records the reply; `none` ignores it.
+
+### Conversations (`dialog`)
+
+Some bots need more than one message: PKTNET answers `CHECK` and then asks for an
+e-mail and a name. A net can carry `dialog` rules; when a reply from the net matches
+a rule's `when` (a case-insensitive regular expression), the program answers with `send`:
+
+```yaml
+dialog:
+  - when: '\[2/2\].*Ant:\s*{name}\s*/\s*{email}'   # saved data are right
+    send: SIM
+  - when: '\[2/2\]'                                  # saved data differ
+    send: NAO
+  - when: 'Deseja o certificado'
+    send: "{email}"
+```
+
+- Rules are tried in order and the first match wins, so put the specific rule before
+  the general one. `{name}`, `{email}` and `{call}` (your base callsign) come from the
+  `station` section of `config.yaml`; inside `when` they are matched literally.
+  `{1}`, `{2}`... in `send` are the groups captured by `when`. `done: true` ends the
+  conversation without sending.
+- Each rule answers **once** per conversation, at most `dialog_max_steps` answers
+  (default 6) are sent, and only within `dialog_timeout` minutes (default 15) after the
+  first message, so an unexpected reply can never start a loop.
+  `dialog_delay` (default 3 s) is the pause before each answer.
+- A rule that needs `{name}` or `{email}` while it is empty in `config.yaml` is
+  skipped, with a warning in the log. The answers are stored in the `dialog_steps` table.
+- Answers sent by a dialog are not retried if the ACK never arrives.
+
+`nets.yaml` has the PKTNET rules for both cases (first participation and returning
+participant).
 
 Always quote times (`"13:00"`): YAML reads an unquoted `13:00` as a number.
 

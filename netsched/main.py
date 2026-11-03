@@ -18,15 +18,15 @@ import yaml
 from .aprsis import AprsIsClient, AuthError, DryRunClient, aprs_passcode, parse_message
 from .certificates import download, extract_urls, safe_name
 from .db import Database
-from .schedule import ConfigError, check_timezone, evaluate, load_nets, parse_time
-from .util import same_station, utcnow
+from .schedule import MAX_MESSAGE_LEN, ConfigError, check_timezone, evaluate, load_nets, parse_time
+from .util import base_call, same_station, utcnow
 
 log = logging.getLogger("netsched")
 
 DEFAULTS = {
     "timezone": "America/Sao_Paulo",   # your own: used to display times and to read `today --at`
     "net_timezone": "UTC",             # the default timezone that defines a net's day (a net can set `tz:`)
-    "station": {"callsign": "", "passcode": "", "signature": ""},
+    "station": {"callsign": "", "passcode": "", "signature": "", "name": "", "email": ""},
     "aprs_is": {"host": "rotate.aprs2.net", "port": 14580},
     "paths": {
         "nets": "nets.yaml",
@@ -220,7 +220,10 @@ class Daemon:
         now = utcnow()
         if msg.ack:
             kind, msgid = msg.ack
-            if self.db.mark_ack(msgid, msg.src, now, rejected=(kind == "rej")):
+            if msgid.startswith("d") and msgid[1:].isdigit():  # an answer sent by a dialog
+                if self.db.mark_step_ack(int(msgid[1:]), now):
+                    log.info("%s %s from %s (dialog answer)", kind.upper(), msgid, msg.src)
+            elif self.db.mark_ack(msgid, msg.src, now, rejected=(kind == "rej")):
                 log.info("%s %s from %s", kind.upper(), msgid, msg.src)
             return
         if msg.msgno:
@@ -235,6 +238,49 @@ class Daemon:
         reply_id = self.db.add_reply(send["id"] if send else None, msg.src, msg.text, msg.msgno, now)
         log.info("reply from %s: %s", msg.src, msg.text)
         self.collect_certificates(net, reply_id, msg.text, now)
+        self.advance_dialog(net, send, msg, now)
+
+    def advance_dialog(self, net, send, msg, now: dt.datetime) -> None:
+        """Answer a reply according to the net's dialog rules (e.g. PKTNET asking for e-mail and name)."""
+        if not net.dialog or send is None or not same_station(send["callsign"], net.callsign):
+            return
+        started = dt.datetime.fromisoformat(send["created_at"])
+        if now - started > dt.timedelta(minutes=net.dialog_timeout):
+            return
+        used = self.db.dialog_used(send["id"])
+        if len(used) >= net.dialog_max_steps:
+            return
+        values = {"name": self.cfg["station"]["name"], "email": self.cfg["station"]["email"],
+                  "call": base_call(self.callsign)}
+        for index, rule in enumerate(net.dialog):
+            if index in used:
+                continue
+            missing = sorted(k for k in rule.needs() if not values[k])
+            if missing:
+                key = (net.callsign, index, "dialog")
+                if key not in self._warned:
+                    self._warned.add(key)
+                    log.warning("%s: dialog rule %d skipped, set station.%s in the config",
+                                net.callsign, index + 1, " and station.".join(missing))
+                continue
+            match = rule.pattern(values).search(msg.text)
+            if not match:
+                continue
+            answer = "" if rule.done else rule.answer(values, match)
+            if len(answer) > MAX_MESSAGE_LEN:
+                log.warning("%s: dialog answer too long (%d chars), not sent", net.callsign, len(answer))
+                return
+            step_id = self.db.add_dialog_step(send["id"], index, answer, now)
+            if step_id is None:
+                return
+            if rule.done:
+                log.info("%s: dialog finished", net.callsign)
+                return
+            if net.dialog_delay:
+                time.sleep(net.dialog_delay)
+            self.client.send_message(msg.src, answer, f"d{step_id}")
+            log.info("%s: dialog answer %d sent: %s", net.callsign, index + 1, answer)
+            return
 
     def collect_certificates(self, net, reply_id: int, text: str, now: dt.datetime) -> None:
         if net.certificate == "none":
