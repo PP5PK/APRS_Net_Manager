@@ -347,4 +347,5 @@ nets:
     sporadic: true
     mode: by_date
     template: "{word} {sig}"
+    ack: false
     certificate: link
