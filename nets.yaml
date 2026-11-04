@@ -29,14 +29,38 @@
 #               {week} = ISO week of the year (APRSThursday "#41").
 
 nets:
-  # ===== Daily and weekly nets ================================================
+# ===== Daily and weekly nets ================================================
   - callsign: APRSMY # OK
     notes: Daily net, no certificate
     info_url: aprsmy.hamradio.my
+    tz: Asia/Kuala_Lumpur
+    schedule: {type: daily}
+    mode: fixed
+    message: "CHECK {sig}"
+    certificate: none
+
+  - callsign: PKTNET # OK
+    notes: >
+      Daily net (a new event starts at 00:00 UTC). CHECK, then a short conversation with the bot:
+      certificate e-mail and the name to print. The answers use station.name / station.email from config.yaml
+    info_url: aprsnets.com/pktnet
     schedule: {type: daily}
     mode: fixed
     message: CHECK
-    certificate: none
+    certificate: email
+    dialog:
+      # Returning participant: the bot shows the saved data ("[2/2]: Ant: NAME / EMAIL")
+      - when: '\[2/2\].*Ant:\s*{name}\s*/\s*{email}'   # saved data are still right
+        send: SIM
+      - when: '\[2/2\]'                                  # saved data differ: start over (bot asks e-mail again)
+        send: NAO
+      # First time (or after NAO)
+      - when: 'Deseja o certificado'
+        send: "{email}"
+      - when: 'Usar "{name}"'                             # bot proposes the right name
+        send: SIM
+      - when: 'Usar "'                                    # bot proposes another name
+        send: "{name}"
 
   - callsign: APRSPH # OK
     notes: Daily net, no certificate
@@ -47,11 +71,19 @@ nets:
     certificate: none
 
   - callsign: 9M4GKS # OK
-    notes: Daily net, plus a special net on Sunday. Certificate link comes in the reply
+    notes: Daily net, plus a special net on Sunday. Certificate link comes in the reply, download the image.jpg directly with this link.
     info_url: aprs.hamfinity.com
     schedule: {type: daily}
     mode: fixed
     message: CQ HAMFINITY {sig}
+    certificate: link
+
+  - callsign: 9M4GKS # OK
+    notes: Daily net, plus a special net on Sunday. Certificate link comes in the reply, download the image.jpg directly with this link.
+    info_url: aprs.hamfinity.com
+    schedule: {type: daily}
+    mode: fixed
+    message: CHECK {sig}
     certificate: link
 
   - callsign: TICANET # OK
@@ -62,8 +94,16 @@ nets:
     message: CQ TICANET
     certificate: code
 
+  - callsign: TICANET # OK
+    notes: A Thursday check-in net on the TICANET bot in Costa Rica.
+    tz: America/Costa_Rica
+    schedule: {type: weekly, weekdays: [thu]}
+    mode: fixed
+    message: "APRSDAY {sig} (week#{week})"
+    certificate: none
+
   - callsign: TI0RHU-15 # OK
-    notes: Daily net with a special event every Saturday and Sunday. Daily certificate link in the reply
+    notes: Daily net with a special event every Saturday and Sunday. Certificate link in the reply leads to a file shared on Google Drive for download.
     info_url: https://script.google.com/macros/s/AKfycbz92FfVGYx-xGHpB21ltY4mRixUP63JgSNNYF5Ew3qHk4g1kkSDFErAxNuxvl9lbr3I/exec
     schedule: {type: daily}
     mode: fixed
@@ -78,6 +118,15 @@ nets:
     message: CQ SARES {sig}
     certificate: link
 
+  - callsign: MYANET # OK
+    notes: A check-in net on the MYANET bot in Malaysia, open every day, with a chat room. Certificate only on the first participation
+    info_url: 9w2key.blogspot.com
+    tz: Asia/Kuala_Lumpur
+    schedule: {type: daily}
+    mode: fixed
+    message: "CQ MASUK {sig}"
+    certificate: none
+
   - callsign: ANSRVR # OK
     notes: APRSThursday, every Thursday. The number after # is the week of the year. No certificate
     schedule: {type: weekly, weekdays: [thu]}
@@ -87,32 +136,44 @@ nets:
 
   - callsign: ANSRVR # OK
     notes: APRS HF Net, every Weekend. The number after # is the week of the year. No certificate
+    tz: America/Los_Angeles
     schedule: {type: weekly, weekdays: [sat, sun]}
     mode: fixed
     message: "CQ APRSHF {sig} (week#{week})"
     certificate: none
 
   - callsign: ANSRVR # OK
-    notes: New England APRS Net, on the second Monday of each month.
-    schedule: {type: nth_weekday, nth: 2, weekdays: [mon]}
+    notes: The New England APRS net, on the second Monday of each month.
+    tz: America/New_York
+    schedule: {type: nth_weekday, nth: 2, weekdays: [mon], after: "06:00"}
     mode: fixed
-    message: "CQ NEAPRS {sig} (APRSTh#{week})"
+    message: "CQ NEAPRS {sig}"
+    certificate: link
+
+  - callsign: ANSRVR # OK
+    notes: Alliance Amateur Radio Network Bi Weekly Check in, every Wednesday and Saturday.
+    tz: America/New_York
+#    tz: Etc/GMT+5
+    schedule: {type: weekly, weekdays: [wed, sat]}
+    mode: fixed
+    message: "CQ AARN {sig} (week#{week})"
     certificate: none
 
   - callsign: 9W4GTS # OK
-    notes: Every Friday. Certificate link in the reply
+    notes: Every Friday. Certificate link in the reply, download the image.jpg directly with this link.
     info_url: net.hamfinity.com/n/0e162e43ef17
     schedule: {type: weekly, weekdays: [fri]}
     mode: fixed
-    message: CQ KV50S {sig}
+    message: "CQ KV50S {sig} (week#{week})"
     certificate: link
 
-  # ===== Daily nets with a different word each day =============================
-  # Add the words to words.csv or with `netsched addword`. A missing word is logged as a warning.
+# ===== Daily nets with a different word each day =============================
+# Add the words to words.csv or with `netsched addword`. A missing word is logged as a warning.
   - callsign: CE4JWI-10 # OK
     notes: Daily net, one specific word per day. Certificate link in the reply
     word_source: qsl.net/ce4jwi
     info_url: qsl.net/ce4jwi
+    sporadic: true
     schedule: {type: daily}
     mode: by_date
     certificate: link
@@ -120,43 +181,30 @@ nets:
   - callsign: CX2JO-10 # OK
     notes: Daily net. Words come in WhatsApp groups via the event folder. Certificate link in the reply
     word_source: WhatsApp groups (event folder)
-#    tz: America/Montevideo        # the "after 14:00" rule is in Uruguayan local time
+    sporadic: true
     schedule: {type: daily, after: "14:30"}
     mode: by_date
     certificate: link
-    words:
-      2026-10-12: AXOLOTL
-      2026-10-13: SAIGA
-      2026-10-14: DRAGON
-      2026-10-15: AYEAYE
-      2026-10-16: DUMBO
 
   - callsign: XE1JMB-10 # OK
-    notes: Daily net. Words come in WhatsApp groups via the event folder. Certificate link in the reply
+    notes: Daily net. Words come in WhatsApp groups via the event folder. Certificate link in the reply, download the image.jpg directly with this link.
     word_source: WhatsApp groups (event folder), https://xe1jmb.duckdns.org/banners
     schedule: {type: daily}
+    sporadic: true
     mode: by_date
-#    template: "CQ APRSMX {word}"
+    template: "CQ APRSMX {word}"
     certificate: link
-    words:
-      2026-10-12: MURCIA
-      2026-10-13: JUNIN
-      2026-10-14: MICHOACAN
-      2026-10-15: POINTS AR 14
-      2026-10-16: CUNDINAMARCA
 
-
-  # ===== Sporadic nets: nothing is sent until a word is registered =============
+# ===== Sporadic nets: nothing is sent until a word is registered =============
   - callsign: LU1QAO-3 # OK
-    notes: Sporadic. Word is published on the website. Certificate link in the reply
+    notes: Sporadic. Word is published on the website. Certificate link in the reply, it opens a page with the certificate.jpg file, simply click and save it
     word_source: lu1qao.com.ar/aprs-qsl
     info_url: lu1qao.com.ar/aprs-qsl
     sporadic: true
     mode: by_date
     certificate: link
-    words:
-      2026-10-16: CQ FOREST
-      2026-10-17: CQ FOREST
+#    words:
+#      2026-10-23: CQ EDWIN
 
   - callsign: HJ1JCM-10 # OK
     notes: Sporadic. Word is published on the website. Certificate link in the reply
@@ -165,13 +213,6 @@ nets:
     sporadic: true
     mode: by_date
     certificate: link
-    words:
-      2026-10-18: CQ APRSCOL1 CASTILLO
-      2026-10-19: CQ APRSCOL1 CASTILLO
-      2026-10-20: CQ APRSCOL1 CASTILLO
-      2026-10-21: CQ APRSCOL1 CASTILLO
-      2026-10-22: CQ APRSCOL1 CASTILLO
-      2026-10-23: CQ APRSCOL1 CASTILLO
 
   - callsign: XE1JMB-5 # OK
     notes: Occasional net. Words come in WhatsApp groups via the event folder. Certificate link in the reply
@@ -179,12 +220,6 @@ nets:
     sporadic: true
     mode: by_date
     certificate: link
-    words:
-      2026-10-05: DIA DE MUERTOS
-      2026-10-12: DIA DE MUERTOS
-      2026-10-19: DIA DE MUERTOS
-      2026-10-26: DIA DE MUERTOS
-      2026-11-02: DIA DE MUERTOS
 
   - callsign: EA3HMZ-5 # OK
     notes: Occasional net. Words come in WhatsApp groups via the event folder. Certificate link in the reply
@@ -192,30 +227,38 @@ nets:
     sporadic: true
     mode: by_date
     certificate: link
-    words:
-      2026-10-14: LCA-TTO
+#    words:
+#      2026-10-14: LCA-TTO
 
   - callsign: HR5HAC-10 # OK
-    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    notes: Occasional net, word published in internet groups. Certificate link in the reply, it redirects to a page that features a button to download the certificate.png
     sporadic: true
     mode: by_date
     certificate: link
     words:
       2026-10-15: COPAN
-      2026-10-16: COPAN
-      2026-10-17: COPAN
-
-  - callsign: LU8HEG-10 # OK
-    notes: Occasional net, word published in internet groups. Certificate link in the reply
-    sporadic: true
-    mode: by_date
-    certificate: link
-    words:
-      2026-10-13: KNA-VCT
+      2026-11-01: COPAN
+      2026-11-15: COPAN
+      2026-12-01: COPAN
+      2026-12-15: COPAN
+      2027-01-01: COPAN
+      2027-01-15: COPAN
+      2027-02-01: COPAN
+      2027-02-15: COPAN
+      2027-03-01: COPAN
+    # COPAN - Sao 10 eventos a cada 15 dias com duracao de 3 dias cada
 
   - callsign: LU8HEG-5 # OK
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+#    schedule: {type: daily, at: "04:10"}
+    mode: by_date
+    certificate: link
+
+  - callsign: LU8HEG-10 # OK
     notes: Occasional net, "CQ" plus the password word. Certificate link in the reply
     sporadic: true
+#    schedule: {type: daily, at: "04:10"}
     mode: by_date
 #    template: "CQ {word}"
     certificate: link
@@ -275,39 +318,33 @@ nets:
     mode: by_date
     certificate: link
 
-  - callsign: 9M26MD
-    notes: Occasional net, "CQ" plus the keyword. Certificate link in the reply
+  - callsign: HC3RJ-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
     sporadic: true
     mode: by_date
-    template: "CQ {word}"
     certificate: link
 
-  - callsign: PKTNET
-    notes: >
-      Daily net (a new event starts at 00:00 UTC). CHECK, then a short conversation with the bot:
-      certificate e-mail and the name to print. The answers use station.name / station.email from config.yaml
-    info_url: aprsnets.com/pktnet
-    schedule: {type: daily}
-    mode: fixed
-    message: CHECK
-    certificate: email
-    dialog:
-      # Returning participant: the bot shows the saved data ("[2/2]: Ant: NAME / EMAIL")
-      - when: '\[2/2\].*Ant:\s*{name}\s*/\s*{email}'   # saved data are still right
-        send: SIM
-      - when: '\[2/2\]'                                  # saved data differ: start over (bot asks e-mail again)
-        send: NAO
-      # First time (or after NAO)
-      - when: 'Deseja o certificado'
-        send: "{email}"
-      - when: 'Usar "{name}"'                             # bot proposes the right name
-        send: SIM
-      - when: 'Usar "'                                    # bot proposes another name
-        send: "{name}"
-
-  - callsign: MYANET
-    notes: APRSThursday-style net with a chat room. Certificate only on the first participation
-    info_url: 9w2key.blogspot.com
+  - callsign: HC1Y-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
     sporadic: true
     mode: by_date
+    certificate: link
+
+  - callsign: HC1FQ-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: HC1M-10
+    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    sporadic: true
+    mode: by_date
+    certificate: link
+
+  - callsign: 9M8SJQ # OK
+    notes: Occasional net, Net don't reply an ack, send only once, as each submission counts as a submission. Certificate link in the reply, it redirects you to a page where you enter your callsign, and after that, your entries are displayed with their respective links available for download in pdf format
+    sporadic: true
+    mode: by_date
+    template: "{word} {sig}"
     certificate: link
