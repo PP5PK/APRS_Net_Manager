@@ -94,9 +94,53 @@ python3 -m netsched report                                   # certificates that
 python3 -m netsched addword LU8HEG-5 MESSI --from 2026-11-01 --to 2026-11-03 --at 14:30
 ```
 
+## Reading `today`
+
+`python3 -m netsched today` evaluates every net **right now** and prints one line per
+net, using the same logic as the service. Nothing is sent by this command.
+
+```
+STATE         CALLSIGN     SEND AT (UTC / yours)  MESSAGE / DETAIL
+due           APRSMY       15 03:07Z / 00:07      CHECK Greetings from Daniel K. ...
+waiting       CX2JO-10     15 14:34Z / 11:34      AYEAYE
+done          ANSRVR       15 03:00Z / 00:00      CQ HOTG ... (APRSTh#42)
+```
+
+**SEND AT** is `day-of-month HH:MMZ / your local HH:MM`: the moment chosen for that
+net today (see "Days, times and congestion"). For `done` nets it is the planned
+time, not the moment it was really sent.
+
+| State | Meaning | What happens |
+| --- | --- | --- |
+| `due` | today's message is ready, its send time has **already passed** and it is not recorded as sent | the service sends it at its next check (`send.tick_seconds`). It does **not** mean "already executed" |
+| `waiting` | the net is active today and has a message, but its send time is still **in the future** | becomes `due` at the SEND AT time |
+| `done` | the message is **recorded as sent** (any final status: acked, no ACK, rejected) | never sent again that day. The same callsign + day + text is sent only once |
+| `closed` | the net has `before:` and that time has passed without a send | nothing is sent today. Usually the service was off during the whole window |
+| `missing_word` | the net uses `by_date`/`by_weekday`, is **not** `sporadic`, and has no word for today | nothing is sent. Add the word (`addword` or `words.csv`); the detail names the `word_source` |
+| `too_long` | the final text has more than 67 characters (the APRS message limit) | nothing is sent. Shorten the message or the signature; the detail shows the length |
+| `no_event` | a `sporadic` net with no word registered for today | nothing to do, this is normal. Hidden unless you use `--all` |
+| `inactive` | the net's schedule does not include today (other weekday, outside `start`/`end`, not the `nth` weekday) | hidden unless you use `--all` |
+| `disabled` | the net has `enabled: false` | hidden unless you use `--all` |
+
+Lines are sorted by urgency: `due`, `waiting`, `missing_word`, `too_long`, `closed`,
+`done`, then (with `--all`) `no_event`, `inactive`, `disabled`. `--at 2026-10-11T14:00`
+asks "what would be the state at this moment?" (your own `timezone` unless you add an
+offset).
+
+A net in `due` for many minutes means the service is not sending: check
+`systemctl status netsched` and `journalctl -u netsched`. After editing `config.yaml`
+restart the service (only `nets.yaml` and `words.csv` are reloaded by themselves);
+`today` always reads the current files, so it can differ from a service that has not
+been restarted.
+
+`python3 -m netsched report` lists the replies that need your hands: nets with
+`certificate: code` (a code typed on their website) and certificate downloads that
+failed. Columns: reply time, station, status (`manual` or `failed`), link, and the
+reply text or the error. Nets with `certificate: email` are recorded but not listed.
+
 ## Registering nets
 
-See the comment header in `nets.yaml` for every option. Examples:
+Each net is one entry under `nets:` in `nets.yaml`. Examples first, the full list of fields below:
 
 ```yaml
 - callsign: 9W4GTS                      # every Friday
@@ -120,8 +164,62 @@ See the comment header in `nets.yaml` for every option. Examples:
   message: CHECK
 ```
 
-Placeholders in messages: `{sig}` (your signature), `{word}` (the day's word)
-and `{week}` (ISO week of the year, used by APRSThursday: `(APRSTh#{week})`).
+### Every field of a net
+
+Only `callsign` is required; `mode: fixed` also needs `message`, and `by_date`/`by_weekday`
+nets need their words. Anything else has a default. An invalid entry is refused with a
+message naming the net; while the service runs, the previous valid file stays in use.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `callsign` | **required** | station to message, with SSID if it has one (`LU8HEG-5`). The same callsign may appear in several entries (ANSRVR runs several nets) |
+| `notes` | | free text for you, never used by the program |
+| `schedule` | `{type: daily}` | which days and when: see the next table |
+| `mode` | `fixed` | where the text comes from: `fixed`, `by_date` or `by_weekday` (below) |
+| `message` | | text of a `fixed` net. May use `{sig}` and `{week}` |
+| `template` | `{word}` | for `by_date`/`by_weekday`, how the word becomes the message: `"CQ {word}"`, `"{word} {sig}"` |
+| `words` | | `by_date`: `{2026-11-01: WORD}` or `{2026-11-01: {word: WORD, at: "14:30"}}` for an exact time. Words from `words.csv` are merged in |
+| `words_by_weekday` | | `by_weekday`: `{mon: WORD, tue: OTHER}` (first three letters of the weekday) |
+| `sporadic` | `false` | `true` = occasional net: no word for the day is normal (`no_event`). `false` = a missing word is a warning (`missing_word`) |
+| `certificate` | `link` | what to do with the replies: `link` downloads images/PDFs from links in the reply; `code` keeps the reply for `report` (code typed on the website); `email` only records it (the certificate arrives by e-mail); `none` ignores it |
+| `ack` | `true` | `false` for nets that never send an ACK: the message is sent **once**, with no retries (status `unconfirmed`). Use it when each message counts as a participation |
+| `enabled` | `true` | `false` keeps the net registered and sends nothing (`disabled`) |
+| `tz` | `net_timezone` (UTC) | timezone that defines this net's day and its `after`/`before`/`at` times. Use an IANA name (`America/New_York`, `Asia/Kuala_Lumpur`); it follows daylight saving time by itself |
+| `info_url` | | the net's website, shown by `report` |
+| `word_source` | | where the daily word is published, shown in the `missing_word` warning |
+| `dialog`, `dialog_timeout`, `dialog_max_steps`, `dialog_delay` | | conversation rules for bots that ask follow-up questions (see Conversations) |
+
+**`schedule:`** (all keys optional except where noted)
+
+| Key | Meaning |
+| --- | --- |
+| `type` | `daily` (default); `weekly` (needs `weekdays`); `nth_weekday` (needs `weekdays` and `nth`); `date_range` (needs `start`) |
+| `weekdays` | `[mon, tue, wed, thu, fri, sat, sun]`. With `daily` or `date_range` it also works as a filter |
+| `nth` | `nth_weekday` only: `1`-`5`, or `-1` for the last one of the month. `{type: nth_weekday, nth: 2, weekdays: [mon]}` = second Monday |
+| `start`, `end` | `YYYY-MM-DD`, inclusive. `end` is optional (without it the net never ends). They also limit `daily`/`weekly` nets |
+| `after` | the send window opens at this time (`"13:00"`, net timezone) instead of `send.default_start` |
+| `at` | exact send time (`"14:30"`), no spread. Cannot be combined with `after` |
+| `before` | never send later than this time; after it the net becomes `closed` |
+| `spread` | minutes of random spread after the window opens, for this net only (`0` = on the dot) |
+
+**Message modes**
+
+- `fixed`: always the same text, from `message`.
+- `by_date`: a different word per calendar day, taken from `words:` and/or `words.csv`, inserted
+  into `template`. The `time` of a word (an event) overrides the net's schedule for that day.
+- `by_weekday`: one word per weekday from `words_by_weekday`, inserted into `template`.
+
+**Placeholders** in `message` and `template`: `{sig}` = `station.signature`, `{word}` = the
+day's word, `{week}` = ISO week of the year in the net's timezone (`(APRSTh#{week})` on
+week 42 becomes `(APRSTh#42)`). The final text must have at most 67 characters.
+
+**Things to know**
+
+- A message is sent once per net, day and text. Two entries of the same callsign with
+  different texts (`CQ HAMFINITY {sig}` and `CHECK {sig}`) are sent as two messages.
+- Dates and times are always in the net's own timezone (`tz`, else UTC). Quote times:
+  `"13:00"`.
+- To send something again on the same day, delete its row in `sends` (see Operation).
 
 Words for `by_date` nets live in `words.csv` (`callsign,date,word`, see
 `words.example.csv`). The `addword` command appends to that file for you. Both
@@ -132,10 +230,6 @@ daemon never needs a restart to pick up new nets or words.
 register a word for the day. **Daily nets whose word is published elsewhere**
 (CE4JWI-10, CX2JO-10, XE1JMB-10) log a warning when today's word is missing, and
 name `word_source` so you know where to look.
-
-**Certificate modes:** `link` downloads the file automatically; `code` keeps the
-reply (it may carry the code) and lists it in `report` together with the net's
-website; `email` just records the reply; `none` ignores it.
 
 ### Conversations (`dialog`)
 
@@ -244,6 +338,9 @@ TI0RHU-15: downloaded https://.../certificate.png /opt/APRS_Net_Manager/certs/TI
 **Update:** `sudo -u netsched git -C /opt/APRS_Net_Manager pull`, then
 `sudo systemctl restart netsched`. Edits to `nets.yaml` and `words.csv` are picked up
 without a restart; an invalid edit is logged and the previous version keeps running.
+**`config.yaml` is read only when the service starts**: after changing it (send window,
+spread, tick, station name/e-mail...) restart the service, otherwise it keeps the old values
+while `today` already shows the new ones.
 
 **Back up:** `config.yaml`, `words.csv`, `data/` and `certs/` are not in git.
 
@@ -253,6 +350,10 @@ without a restart; an invalid edit is logged and the previous version keeps runn
 sqlite3 -header -column data/netsched.db \
   "SELECT callsign, local_date, text, status, attempts FROM sends ORDER BY id DESC LIMIT 20;"
 ```
+
+**Send it again** (same net, same day, same text): delete its row, then wait for the next
+check: `sqlite3 data/netsched.db "DELETE FROM sends WHERE id = 12;"` (use the `id` from the
+query above; run it as the `netsched` user and, with the service stopped, to be safe).
 
 Status: `sent` waiting for the ACK, `acked` confirmed, `rejected` the net refused it,
 `no_ack` never confirmed after all attempts, `unconfirmed` the net is set to `ack: false`.

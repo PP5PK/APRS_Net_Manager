@@ -194,18 +194,22 @@ class SendTimes(unittest.TestCase):
 class Loading(unittest.TestCase):
     def test_repository_nets_file_loads(self):
         nets = load_nets(Path(__file__).resolve().parent.parent / "nets.yaml")
-        by_call = {n.callsign: n for n in nets}
+        by_call = {}
+        for n in nets:
+            by_call.setdefault(n.callsign, n)  # several entries may share a callsign: take the first
         self.assertEqual(by_call["9W4GTS"].schedule.weekdays, (4,))
         self.assertEqual(by_call["CX2JO-10"].schedule.after, dt.time(14, 30))  # UTC
         self.assertEqual(by_call["CX2JO-10"].mode, "by_date")
-        self.assertTrue(all(net.tz is None for net in nets))  # every net follows UTC
+        self.assertIsNone(by_call["CX2JO-10"].tz)  # nets follow UTC unless they say otherwise
+        self.assertEqual(by_call["APRSMY"].tz, "Asia/Kuala_Lumpur")
         self.assertEqual(by_call["TICANET"].certificate, "code")
         self.assertEqual(by_call["PKTNET"].certificate, "email")
         self.assertEqual(by_call["ANSRVR"].certificate, "none")
         self.assertTrue(by_call["HR5HAC-10"].sporadic)
 
-    def test_entries_sharing_a_callsign_never_fall_on_the_same_day(self):
-        # ANSRVR hosts several nets (Thursday, weekends, 2nd Monday): one message per day at most
+    def test_entries_sharing_a_callsign_never_send_the_same_text_on_the_same_day(self):
+        # A send is unique per callsign, day and text: two entries that render the same text on the same
+        # day would silently collapse into one (different texts, e.g. several ANSRVR nets, are fine)
         groups = {}
         for n in load_nets(Path(__file__).resolve().parent.parent / "nets.yaml"):
             groups.setdefault(n.callsign, []).append(n)
@@ -214,8 +218,9 @@ class Loading(unittest.TestCase):
         day = dt.date(2026, 1, 1)
         while day <= dt.date(2027, 12, 31):
             for call, entries in shared.items():
-                active = [n for n in entries if n.schedule.is_active_on(day) and n.render(day, SIG) is not None]
-                self.assertLessEqual(len(active), 1, f"{call} has two messages on {day}")
+                texts = [n.render(day, SIG) for n in entries if n.schedule.is_active_on(day)]
+                texts = [t for t in texts if t is not None]
+                self.assertEqual(len(texts), len(set(texts)), f"{call} repeats a message on {day}")
             day += dt.timedelta(days=1)
 
     def test_aprs_thursday_message_matches_the_real_one(self):
