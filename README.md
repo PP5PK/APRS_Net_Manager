@@ -90,6 +90,7 @@ not sent.
 
 ```bash
 python3 -m netsched today [--at 2026-10-11T14:00] [--all]   # --all also lists inactive nets
+python3 -m netsched agenda [--date 2026-11-05] [--days 2]    # everything scheduled in a window of YOUR time
 python3 -m netsched report                                   # certificates that need a manual step
 python3 -m netsched addword LU8HEG-5 MESSI --from 2026-11-01 --to 2026-11-03 --at 14:30
 ```
@@ -126,6 +127,34 @@ Lines are sorted by urgency: `due`, `waiting`, `missing_word`, `too_long`, `clos
 `done`, then (with `--all`) `no_event`, `inactive`, `disabled`. `--at 2026-10-11T14:00`
 asks "what would be the state at this moment?" (your own `timezone` unless you add an
 offset).
+
+### `today` or `agenda`?
+
+`today` answers "what is the state of every net *right now*?" and every net is looked at in
+**its own day**. A net with its own timezone far from yours can therefore be in a different
+day from the one you are living: a net on `Asia/Kuala_Lumpur` (UTC+8) starts its *November 5th*
+at 16:00 of **November 4th** in Brasília (the `04 19:09Z` lines in `today --at 2026-11-05T00:00`).
+Those sends are real: the service sends them on the evening before, at the time shown, and it is
+correct, because for that net the day has already begun. Their state is `due` in that listing
+only because `--at` simulates a later moment than the real one.
+
+`agenda` answers "what will be sent between 00:00 and 24:00 of **my** day?" and includes those
+nets, sorted by time, with the net's own day when it differs:
+
+```
+YOUR TIME    UTC        STATE     CALLSIGN     MESSAGE / DETAIL
+05 00:01     05 03:01Z  waiting   CE4JWI-10    TSUNAMI
+05 06:04     05 09:04Z  waiting   TICANET      APRSDAY ... [net day 2026-11-05 America/Costa_Rica]
+05 16:02     05 19:02Z  waiting   APRSMY       CHECK ...   [net day 2026-11-06 Asia/Kuala_Lumpur]
+```
+
+`--date` is the first day of the window in your timezone (default today), `--days` how many days
+to show, and `--at` simulates the current moment. The states are the same as in `today`.
+
+**Window start and time zones:** `send.default_start` and `after` are read in the *net's*
+time. With `default_start: "03:00"`, a UTC net starts at 03:00Z but a net on
+`Asia/Kuala_Lumpur` starts at 03:00 *Kuala Lumpur* time (19:00Z of the day before). To make such a
+net start at another moment, give it its own `after:` (or `at:`) in its `schedule`.
 
 A net in `due` for many minutes means the service is not sending: check
 `systemctl status netsched` and `journalctl -u netsched`. After editing `config.yaml`

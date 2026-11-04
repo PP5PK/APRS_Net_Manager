@@ -370,6 +370,65 @@ def cmd_today(cfg: dict, args: argparse.Namespace) -> int:
     return 0
 
 
+def _probe(net, day: dt.date, now: dt.datetime, default_tz: str) -> dt.datetime:
+    """An instant inside the net's local `day`, so evaluate() looks at that day with the right state."""
+    tz = ZoneInfo(net.tz or default_tz)
+    if now.astimezone(tz).date() == day:
+        return now
+    if day > now.astimezone(tz).date():
+        return dt.datetime.combine(day, dt.time(0, 0), tzinfo=tz)       # future day: nothing happened yet
+    return dt.datetime.combine(day, dt.time(23, 59, 59), tzinfo=tz)     # past day: what happened by its end
+
+
+def cmd_agenda(cfg: dict, args: argparse.Namespace) -> int:
+    """Every send that falls inside a window of *your* time, including nets whose own day starts earlier."""
+    mine = ZoneInfo(cfg["timezone"])
+    now = _resolve_now(args.at, cfg["timezone"])
+    try:
+        first = dt.date.fromisoformat(args.date) if args.date else now.astimezone(mine).date()
+    except ValueError as exc:
+        raise ConfigError(f"invalid date: {exc}") from exc
+    if args.days < 1:
+        raise ConfigError("--days must be at least 1")
+    begin = dt.datetime.combine(first, dt.time(0, 0), tzinfo=mine)
+    end = dt.datetime.combine(first + dt.timedelta(days=args.days), dt.time(0, 0), tzinfo=mine)
+    nets = NetStore(cfg).get()
+    db_path = Path(cfg["paths"]["database"])
+    db = Database(db_path) if db_path.exists() else None
+    is_done = db.is_done if db else (lambda callsign, day, text: False)
+    spread = int(cfg["send"]["default_spread_minutes"])
+    start = parse_time(cfg["send"]["default_start"])
+    rows = []
+    for net in nets:
+        tz = ZoneInfo(net.tz or cfg["net_timezone"])
+        day = begin.astimezone(tz).date() - dt.timedelta(days=1)
+        last = end.astimezone(tz).date() + dt.timedelta(days=1)
+        while day <= last:
+            d = evaluate(net, _probe(net, day, now, cfg["net_timezone"]), cfg["station"]["signature"],
+                         cfg["net_timezone"], is_done, spread, start)
+            if d.send_at is not None and begin <= d.send_at < end and d.day == day:
+                rows.append(d)
+            day += dt.timedelta(days=1)
+    if db:
+        db.close()
+    print(f"Window: {begin:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} {cfg['timezone']}  "
+          f"(now: {now.astimezone(mine):%Y-%m-%d %H:%M})")
+    print(f"{'YOUR TIME':<12} {'UTC':<10} {'STATE':<9} {'CALLSIGN':<12} MESSAGE / DETAIL")
+    for d in sorted(rows, key=lambda d: (d.send_at, d.net.callsign)):
+        info = d.text or ""
+        if d.detail:
+            info = f"{info}  [{d.detail}]".strip()
+        net_tz = d.net.tz or cfg["net_timezone"]
+        if net_tz != cfg["net_timezone"]:
+            info += f"  [net day {d.day.isoformat()} {net_tz}]"
+        print(f"{d.send_at.astimezone(mine):%d %H:%M}".ljust(13)
+              + f"{d.send_at.astimezone(dt.timezone.utc):%d %H:%M}Z".ljust(11)
+              + f"{d.state:<10}{d.net.callsign:<13}{info}")
+    if not rows:
+        print("Nothing is scheduled in this window.")
+    return 0
+
+
 def cmd_report(cfg: dict, args: argparse.Namespace) -> int:
     db_path = Path(cfg["paths"]["database"])
     if not db_path.exists():  # nothing has run yet; do not create the file
@@ -439,6 +498,12 @@ def main(argv: list | None = None) -> int:
     today.add_argument("--at", help="simulate a moment, e.g. 2026-10-11T14:00 (config timezone)")
     today.add_argument("--all", action="store_true", help="also list inactive and disabled nets")
     today.set_defaults(func=cmd_today)
+
+    agenda = sub.add_parser("agenda", help="everything scheduled in a window of your time (nothing is sent)")
+    agenda.add_argument("--date", help="first day of the window, YYYY-MM-DD in your timezone (default: today)")
+    agenda.add_argument("--days", type=int, default=1, help="how many days to show (default 1)")
+    agenda.add_argument("--at", help="simulate the current moment, e.g. 2026-10-11T14:00 (config timezone)")
+    agenda.set_defaults(func=cmd_agenda)
 
     run = sub.add_parser("run", help="run the scheduler daemon")
     run.add_argument("--dry-run", action="store_true", help="do not connect; only log what would be sent")

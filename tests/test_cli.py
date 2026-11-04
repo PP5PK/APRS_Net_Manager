@@ -86,6 +86,41 @@ class AddWord(unittest.TestCase):
             load_config(str(self.root / "bad.yaml"))
 
 
+class Agenda(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "nets.yaml").write_text(
+            "nets:\n"
+            "  - {callsign: APRSMY, mode: fixed, message: CHECK, tz: Asia/Kuala_Lumpur}\n"
+            "  - {callsign: APRSPH, mode: fixed, message: CQ}\n", encoding="utf-8")
+        (self.root / "config.yaml").write_text(
+            "station: {callsign: PP5PK-7}\nsend: {default_start: '03:00', default_spread_minutes: 0}\n",
+            encoding="utf-8")
+
+    def agenda(self, *argv) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(main(["--config", str(self.root / "config.yaml"), "agenda", *argv]), 0)
+        return out.getvalue()
+
+    def test_a_net_ahead_of_utc_is_listed_on_the_previous_day_of_your_time(self):
+        # Kuala Lumpur is UTC+8: its day 2026-11-05 starts at 03:00 local = 19:00Z on the 4th = 16:00 in Brasilia
+        text = self.agenda("--date", "2026-11-04", "--at", "2026-11-04T10:00")
+        line = next(l for l in text.splitlines() if "APRSMY" in l)
+        self.assertTrue(line.startswith("04 16:00"), line)
+        self.assertIn("04 19:00Z", line)
+        self.assertIn("waiting", line)
+        self.assertIn("net day 2026-11-05 Asia/Kuala_Lumpur", line)
+
+    def test_each_utc_net_appears_once_per_day_of_your_time(self):
+        text = self.agenda("--date", "2026-11-04", "--days", "2", "--at", "2026-11-04T10:00")
+        self.assertEqual([l[:8] for l in text.splitlines() if "APRSPH" in l], ["04 00:00", "05 00:00"])
+        self.assertEqual([l[:8] for l in text.splitlines() if "APRSMY" in l], ["04 16:00", "05 16:00"])
+        self.assertIn("net day 2026-11-06", [l for l in text.splitlines() if "APRSMY" in l][1])
+
+
 class Robustness(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
