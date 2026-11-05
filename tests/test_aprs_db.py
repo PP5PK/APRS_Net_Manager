@@ -72,7 +72,10 @@ class DatabaseFlow(unittest.TestCase):
         self.db.assign_msgid(send_id)
         for i in range(3):
             self.db.record_attempt(send_id, NOW + dt.timedelta(seconds=60 * i))
-        self.assertEqual(self.db.expire_unacked(3, 60, NOW + dt.timedelta(seconds=300)), 1)
+        later = NOW + dt.timedelta(seconds=300)
+        self.assertEqual([r["callsign"] for r in self.db.expiring_unacked(3, 60, later)], ["TICANET"])
+        self.assertEqual(self.db.expire_unacked(3, 60, later), 1)
+        self.assertEqual(self.db.expiring_unacked(3, 60, later), [])
 
     def test_reply_dedupe_and_certificates(self):
         send_id = self.db.create_send("CE4JWI-10", self.day, "CORREO", NOW)

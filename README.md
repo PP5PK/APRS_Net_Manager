@@ -387,6 +387,57 @@ query above; run it as the `netsched` user and, with the service stopped, to be 
 Status: `sent` waiting for the ACK, `acked` confirmed, `rejected` the net refused it,
 `no_ack` never confirmed after all attempts, `unconfirmed` the net is set to `ack: false`.
 
+## Log messages
+
+The service writes to the journal (`journalctl -u netsched -f`). Put `-v` before `--config` in
+`ExecStart` (`python3 -m netsched -v --config ... run`) to also see `DEBUG` lines (every packet sent). Each line is
+`date time LEVEL message`. `INFO` is routine, `WARNING` deserves a look, `ERROR` stops or
+skips something.
+
+**Startup and connection**
+
+| Message | Meaning |
+| --- | --- |
+| `started as PP5PK-5` | the service is running and will log in with this callsign |
+| `connecting to host:port as CALL` | opening the APRS-IS connection |
+| `logged in: logresp CALL verified, server X` | login accepted |
+| `WARNING connection problem: ...; retrying in N s` | the link dropped (network, server restart). It reconnects by itself, waiting 5 s, then 10, 20... up to 5 minutes. Messages due meanwhile are sent after the reconnect |
+| `ERROR login not verified: ...` and the service stops | the server refused the callsign/passcode pair. Fix `station.passcode` (or leave it empty to compute it) in `config.yaml` and `sudo systemctl restart netsched` |
+| `stopping` | the service was stopped (`systemctl stop`) |
+| `reloaded N nets` | `nets.yaml` or `words.csv` changed and was loaded again (on its own, no restart needed) |
+| `ERROR nets file not reloaded, keeping previous version: ...` | your last edit has an error (the text says where). The old version keeps running until you fix the file |
+
+**Sending**
+
+| Message | Meaning |
+| --- | --- |
+| `sent to NET: TEXT (msgid N)` | the message left. `msgid` is the number the net returns in its ACK |
+| `ACK N from NET` | the net confirmed receipt of message `N`. State in the database: `acked` |
+| `REJ N from NET` | the net refused the message. State: `rejected`, no retry |
+| `retry 2 to NET (no ACK yet)` | no ACK arrived within `send.retry_interval`; the same message is sent again (the number is the attempt). At most `send.retries` attempts in total |
+| `WARNING no ACK from NET after N attempt(s): TEXT` | all attempts were used and no ACK came. State: `no_ack`. **It does not mean the net did not receive it**: some bots never ACK but do answer (a `reply from` right after confirms it). For those, set `ack: false` on the net |
+| `WARNING NET skipped: ...` | the net is due but cannot be sent: `no word for DATE (source: ...)` (add the word) or `message is N characters, the APRS limit is 67`. Logged once per day |
+
+**Replies**
+
+| Message | Meaning |
+| --- | --- |
+| `reply from STATION: TEXT` | a message addressed to you arrived from a registered net and was stored. It includes the net's bots and also other participants speaking in the room (MYANET, XE1JMB-10) |
+| `NET: certificate is sent by e-mail; reply: ...` | the net has `certificate: email`; the reply is only recorded |
+| `NET: code required on the website; reply: ...` | the net has `certificate: code`; the reply (with the code) is kept for `report` |
+| `NET: downloaded URL PATH` | a certificate image/PDF was saved in `certs/NET/` |
+| `NET: failed URL reason` | the download failed (not an image/PDF, too big, address blocked, timeout). Listed by `report` |
+| `NET: dialog answer N sent: TEXT` | rule N of the net's `dialog` matched and the answer was sent (see Conversations) |
+| `ACK dN from NET (dialog answer)` | the net confirmed an answer sent by a dialog (`d` + number) |
+| `NET: dialog finished` | a rule with `done: true` matched |
+| `WARNING NET: dialog rule N skipped, set station.email in the config` | the rule needs `{name}` or `{email}` and it is empty in `config.yaml` |
+| `WARNING NET: dialog answer too long (N chars), not sent` | the answer exceeds 67 characters |
+
+Repeated identical replies in a short time are stored once, and messages from stations that are
+not registered nets are ignored without a log line (visible with `-v`).
+
+**Dry run:** `[dry-run] ...` lines come from `run --dry-run`, which never connects or sends.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

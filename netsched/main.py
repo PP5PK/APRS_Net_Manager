@@ -197,9 +197,10 @@ class Daemon:
             self.db.record_attempt(row["id"], utcnow())
             log.info("retry %d to %s (no ACK yet)", row["attempts"] + 1, row["callsign"])
             self.pump(send_cfg["gap_seconds"])
-        expired = self.db.expire_unacked(send_cfg["retries"], send_cfg["retry_interval"], utcnow())
-        if expired:
-            log.warning("%d message(s) never acknowledged", expired)
+        stamp = utcnow()
+        for row in self.db.expiring_unacked(send_cfg["retries"], send_cfg["retry_interval"], stamp):
+            log.warning("no ACK from %s after %d attempt(s): %s", row["callsign"], row["attempts"], row["text"])
+        self.db.expire_unacked(send_cfg["retries"], send_cfg["retry_interval"], stamp)
 
     # ------------------------------------------------------------ receiving
 

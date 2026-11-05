@@ -114,6 +114,15 @@ class Database:
             (max_attempts, oldest, cutoff),
         ).fetchall()
 
+    def expiring_unacked(self, max_attempts: int, interval: int, now: dt.datetime) -> list:
+        """The sends that expire_unacked() is about to mark as no_ack (for the log)."""
+        cutoff = iso(now - dt.timedelta(seconds=interval))
+        return self.conn.execute(
+            "SELECT callsign, text, attempts FROM sends WHERE status = 'sent' "
+            "AND attempts >= ? AND last_attempt_at <= ? ORDER BY id",
+            (max_attempts, cutoff),
+        ).fetchall()
+
     def expire_unacked(self, max_attempts: int, interval: int, now: dt.datetime) -> int:
         cutoff = iso(now - dt.timedelta(seconds=interval))
         with self.conn:
