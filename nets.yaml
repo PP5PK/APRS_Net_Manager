@@ -109,7 +109,7 @@ nets:
     schedule: {type: daily}
     mode: fixed
     message: QSL
-    certificate: link
+    certificate: none
 
   - callsign: 9M4CSR # OK
     notes: Events every Tuesday. Certificate link in the reply. More at sares.org.my
@@ -168,6 +168,24 @@ nets:
     message: "CQ KV50S {sig} (week#{week})"
     certificate: link
 
+  - callsign: HJ5RTD-10 # OK
+    notes: Every Wednesday. Certificate link in the reply, download the image.jpg directly with this link.
+#    info_url:
+    schedule: {type: weekly, weekdays: [wed]}
+    sporadic: true
+    mode: by_date
+#    message: "CQ KV50S {sig} (week#{week})"
+    certificate: link
+    words:
+      2026-11-11: VOODOO
+      2026-11-18: GEFORCE
+      2026-11-25: RADEON 9700
+      2026-12-02: 8800 GTX
+      2026-12-09: HD 7970
+      2026-12-16: GTX 1080
+      2026-12-23: RTX 4090
+      2026-12-30: HALL OF FAME
+
 # ===== Daily nets with a different word each day =============================
 # Add the words to words.csv or with `netsched addword`. A missing word is logged as a warning.
   - callsign: CE4JWI-10 # OK
@@ -175,7 +193,7 @@ nets:
     word_source: qsl.net/ce4jwi
     info_url: qsl.net/ce4jwi
     sporadic: true
-    schedule: {type: daily}
+    schedule: {type: daily, after: "05:00"}
     mode: by_date
     certificate: link
 
@@ -254,7 +272,7 @@ nets:
     sporadic: true
 #    schedule: {type: daily, at: "04:10"}
     mode: by_date
-    certificate: link
+    certificate: none
 
   - callsign: LU8HEG-10 # OK
     notes: Occasional net, "CQ" plus the password word. Certificate link in the reply
@@ -262,10 +280,9 @@ nets:
 #    schedule: {type: daily, at: "04:10"}
     mode: by_date
 #    template: "CQ {word}"
-    certificate: link
-    words:
-      2026-10-14: BABIARA BEYE
-      2026-10-16: ONYAME NNAE
+    certificate: none
+#    words:
+#      2026-10-14: BABIARA BEYE
 
   - callsign: LU4FGS-5 # OK
     notes: Occasional net, "CQ" plus the password word. Certificate link in the reply
@@ -276,7 +293,7 @@ nets:
       2026-10-13: SANKOFA
       2026-10-15: BIAKO YE
 
-  - callsign: YC1SNI-10
+  - callsign: YC1SNI-1
     notes: >
       Occasional net, word published in internet groups. After the word the bot sends 3 messages, the last one
       "Next Step, Reply Only: 59 TU" (the text to send may change, so it is read from the message). Then 3 more,
