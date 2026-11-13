@@ -221,7 +221,7 @@ nets:
     info_url: lu1qao.com.ar/aprs-qsl
     sporadic: true
     mode: by_date
-    certificate: link
+    certificate: manual
 #    words:
 #      2026-10-23: CQ EDWIN
 
@@ -253,7 +253,7 @@ nets:
     notes: Occasional net, word published in internet groups. Certificate link in the reply, it redirects to a page that features a button to download the certificate.png
     sporadic: true
     mode: by_date
-    certificate: link
+    certificate: manual
     words:
       2026-10-15: COPAN
       2026-11-01: COPAN
@@ -372,4 +372,4 @@ nets:
     mode: by_date
     template: "{word} {sig}"
     ack: false
-    certificate: link
+    certificate: manual
