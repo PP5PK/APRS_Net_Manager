@@ -210,7 +210,7 @@ message naming the net; while the service runs, the previous valid file stays in
 | `words` | | `by_date`: `{2026-11-01: WORD}` or `{2026-11-01: {word: WORD, at: "14:30"}}` for an exact time. Words from `words.csv` are merged in |
 | `words_by_weekday` | | `by_weekday`: `{mon: WORD, tue: OTHER}` (first three letters of the weekday) |
 | `sporadic` | `false` | `true` = occasional net: no word for the day is normal (`no_event`). `false` = a missing word is a warning (`missing_word`) |
-| `certificate` | `link` | what to do with the replies: `link` downloads images/PDFs from links in the reply; `code` keeps the reply for `report` (code typed on the website); `email` only records it (the certificate arrives by e-mail); `none` ignores it |
+| `certificate` | `link` | what to do with the replies: `link` downloads images/PDFs from links in the reply; `code` keeps the reply for `report` (code typed on the website); `manual` is for a link that opens a page where you pick the file by hand: only replies with a link are kept for `report`; `email` only records it (the certificate arrives by e-mail); `none` ignores it |
 | `ack` | `true` | `false` for nets that never send an ACK: the message is sent **once**, with no retries (status `unconfirmed`). Use it when each message counts as a participation |
 | `enabled` | `true` | `false` keeps the net registered and sends nothing (`disabled`) |
 | `tz` | `net_timezone` (UTC) | timezone that defines this net's day and its `after`/`before`/`at` times. Use an IANA name (`America/New_York`, `Asia/Kuala_Lumpur`); it follows daylight saving time by itself |

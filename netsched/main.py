@@ -287,6 +287,13 @@ class Daemon:
         if net.certificate == "none":
             return
         urls = extract_urls(text)
+        if net.certificate == "manual":
+            # The link opens a page where the file must be picked by hand: keep only the replies that carry it
+            if urls:
+                note = f"open the link and download the certificate by hand: {urls[0]}"
+                self.db.add_certificate(reply_id, urls[0], "manual", None, note, now)
+                log.info("%s: %s", net.callsign, note)
+            return
         if net.certificate in ("code", "email"):
             # Nothing to download. Keep the reply (it may carry the code) for the manual step.
             if net.certificate == "code":

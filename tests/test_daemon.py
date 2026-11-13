@@ -153,6 +153,23 @@ class Dialog(unittest.TestCase):
         self.bot("Deseja o certificado? Responda com seu email ou apenas NAO")
         self.assertEqual(self.answers(), [])
 
+    def test_the_text_to_send_is_read_from_the_bots_request(self):
+        # YC1SNI: "Next Step, Reply Only: 59 TU" -> answer exactly what is asked, even if it changes
+        net = Net.from_dict({"callsign": "PKTNET", "message": "CHECK", "dialog_delay": 0, "certificate": "manual",
+                             "dialog": [{"when": r"Next Step,?\s*Reply Only:\s*(.+?)\s*$", "send": "{1}"}]})
+        self.daemon.store._nets = [net]
+        self.bot("QSL PP5PK-4 WORLD KINDNESS DAY 2026")
+        self.bot("13/11 01:28Z | PKT | 144.390 Confirmation on QRZ.com & LoTW")
+        self.assertEqual(self.answers(), [])
+        self.bot("Next Step, Reply Only: 59 TU")
+        self.assertEqual(self.answers(), ["59 TU"])
+        self.bot("PP5PK-4 Be Kind to Everyone")
+        self.bot("Happy Good Day PP5PK-4 Cuagn de YC1SNI 73")
+        self.bot("https://aprs.yc1sni.id/e/606")
+        self.assertEqual(self.answers(), ["59 TU"])
+        rows = self.daemon.db.conn.execute("SELECT url, status FROM certificates").fetchall()
+        self.assertEqual([tuple(r) for r in rows], [("https://aprs.yc1sni.id/e/606", "manual")])
+
     def test_invalid_rules_are_refused(self):
         for rule in ({"when": "("}, {"when": "x"}, {"send": "x"}):
             with self.assertRaises(ConfigError, msg=rule):

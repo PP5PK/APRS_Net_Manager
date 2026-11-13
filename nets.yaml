@@ -15,6 +15,7 @@
 # template      : for by_date / by_weekday, how the word becomes the message (default "{word}")
 # certificate   : link  = download automatically from a link in the reply
 #                 code  = needs a code typed on the website (reply is kept for `report`)
+#                 manual= the link opens a page where you pick the file: kept for `report`, only replies with a link
 #                 email = certificate arrives by e-mail (nothing to download)
 #                 none  = the net issues no certificate
 # sporadic      : true = occasional net. Nothing is sent until a word is registered for the day
@@ -276,10 +277,16 @@ nets:
       2026-10-15: BIAKO YE
 
   - callsign: YC1SNI-10
-    notes: Occasional net, word published in internet groups. Certificate link in the reply
+    notes: >
+      Occasional net, word published in internet groups. After the word the bot sends 3 messages, the last one
+      "Next Step, Reply Only: 59 TU" (the text to send may change, so it is read from the message). Then 3 more,
+      the last with a link to a page where the certificate is picked by hand
     sporadic: true
     mode: by_date
-    certificate: link
+    certificate: manual
+    dialog:
+      - when: 'Next Step,?\s*Reply Only:\s*(.+?)\s*$'
+        send: "{1}"
 
   - callsign: LU2DGE-10
     notes: Occasional net, word published in internet groups. Certificate link in the reply

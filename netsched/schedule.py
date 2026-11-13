@@ -16,7 +16,7 @@ WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 MAX_MESSAGE_LEN = 67  # APRS message text limit
 SCHEDULE_TYPES = {"daily", "weekly", "nth_weekday", "date_range"}
 MODES = {"fixed", "by_date", "by_weekday"}
-CERT_MODES = {"link", "code", "email", "none"}
+CERT_MODES = {"link", "code", "email", "manual", "none"}
 
 
 class ConfigError(ValueError):
